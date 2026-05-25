@@ -15,6 +15,7 @@ createApp({
     const activeDetailEmoji = ref(null);
     const personaFilter = ref("");
     const toasts = ref([]);
+    const syncDrawerVisible = ref(false);
     let toastIdCounter = 0;
 
     // Properties Editor (Inline Grid Drawer)
@@ -1098,6 +1099,7 @@ createApp({
       activeDetailEmoji,
       personaFilter,
       toasts,
+      syncDrawerVisible,
       detailMetadata,
       selectedEmotions,
       selectedPersonas,

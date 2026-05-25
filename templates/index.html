@@ -22,120 +22,115 @@
           <h1>表情管理系统</h1>
         </div>
         <div class="header-actions">
-          <!-- 人格过滤器 -->
-          <div class="persona-filter-wrapper">
-            <label for="persona-filter"><i class="fas fa-user-gear icon"></i>过滤人格:</label>
-            <select id="persona-filter" v-model="personaFilter" @change="fetchEmojis">
-              <option value="">全部可用</option>
-              <option v-for="p in systemPersonas" :key="p.id" :value="p.id">
-                {% raw %}{{ p.name }}{% endraw %} ({% raw %}{{ p.id }}{% endraw %})
-              </option>
-            </select>
-          </div>
+          <button class="btn-secondary toggle-sync-btn" :class="{ active: syncDrawerVisible }" @click="syncDrawerVisible = !syncDrawerVisible">
+            <i class="fas fa-arrows-spin icon"></i>同步与设置
+          </button>
         </div>
       </header>
 
-      <!-- 主要工作区 (无侧边栏，通栏大气的仪表盘布局) -->
+      <!-- 主要工作区 (通栏大气的仪表盘布局) -->
       <main class="main-content">
-        <!-- 同步控制中心网格 -->
-        <div class="sync-grid">
-          <!-- 本地配置同步卡片 -->
-          <div class="sync-card">
-            <div class="sync-card-header">
-              <div class="sync-title">
-                <i class="fas fa-arrows-spin header-icon"></i>
-                <h3>配置与本地同步</h3>
-              </div>
-              <button class="btn-text" @click="checkSyncStatus(true)" :disabled="syncChecking">
-                <i class="fas fa-sync" :class="{ 'fa-spin': syncChecking }"></i> 检查状态
-              </button>
-            </div>
-            <div class="sync-card-body">
-              <div v-if="syncChecking" class="loading-state">
-                <i class="fas fa-circle-notch fa-spin"></i> 正在检查配置状态...
-              </div>
-              <div v-else>
-                <div v-if="syncStatus.inSync" class="sync-status-ok">
-                  <i class="fas fa-circle-check"></i> 配置与文件夹结构一致！
+        <!-- 同步控制中心抽屉 (折叠显示) -->
+        <div class="sync-drawer" v-show="syncDrawerVisible">
+          <div class="sync-grid">
+            <!-- 本地配置同步卡片 -->
+            <div class="sync-card">
+              <div class="sync-card-header">
+                <div class="sync-title">
+                  <i class="fas fa-arrows-spin header-icon"></i>
+                  <h3>配置与本地同步</h3>
                 </div>
-                <div v-else class="sync-status-warn">
-                  <div v-if="syncStatus.missingInConfig.length > 0" class="sync-diff-group">
-                    <h4>未注册的本地分类:</h4>
-                    <div class="diff-tags">
-                      <span v-for="cat in syncStatus.missingInConfig" :key="cat" class="diff-tag">
-                        {% raw %}{{ cat }}{% endraw %}
-                      </span>
-                    </div>
+                <button class="btn-text" @click="checkSyncStatus(true)" :disabled="syncChecking">
+                  <i class="fas fa-sync" :class="{ 'fa-spin': syncChecking }"></i> 检查状态
+                </button>
+              </div>
+              <div class="sync-card-body">
+                <div v-if="syncChecking" class="loading-state">
+                  <i class="fas fa-circle-notch fa-spin"></i> 正在检查配置状态...
+                </div>
+                <div v-else>
+                  <div v-if="syncStatus.inSync" class="sync-status-ok">
+                    <i class="fas fa-circle-check"></i> 配置与文件夹结构一致！
                   </div>
-                  <div v-if="syncStatus.deletedCategories.length > 0" class="sync-diff-group">
-                    <h4>已删除的类别（配置残留）：</h4>
-                    <div class="deleted-list">
-                      <div v-for="cat in syncStatus.deletedCategories" :key="cat" class="deleted-item">
-                        <span class="deleted-name">{% raw %}{{ cat }}{% endraw %}</span>
-                        <div class="deleted-actions">
-                          <button class="btn-sm" @click="restoreCategory(cat)">恢复文件夹</button>
-                          <button class="btn-sm btn-danger" @click="removeFromConfig(cat)">删除配置</button>
+                  <div v-else class="sync-status-warn">
+                    <div v-if="syncStatus.missingInConfig.length > 0" class="sync-diff-group">
+                      <h4>未注册的本地分类:</h4>
+                      <div class="diff-tags">
+                        <span v-for="cat in syncStatus.missingInConfig" :key="cat" class="diff-tag">
+                          {% raw %}{{ cat }}{% endraw %}
+                        </span>
+                      </div>
+                    </div>
+                    <div v-if="syncStatus.deletedCategories.length > 0" class="sync-diff-group">
+                      <h4>已删除的类别（配置残留）：</h4>
+                      <div class="deleted-list">
+                        <div v-for="cat in syncStatus.deletedCategories" :key="cat" class="deleted-item">
+                          <span class="deleted-name">{% raw %}{{ cat }}{% endraw %}</span>
+                          <div class="deleted-actions">
+                            <button class="btn-sm" @click="restoreCategory(cat)">恢复文件夹</button>
+                            <button class="btn-sm btn-danger" @click="removeFromConfig(cat)">删除配置</button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+              <div class="sync-card-footer">
+                <button class="btn-primary w-100" @click="syncConfig" :disabled="syncChecking || syncStatus.inSync">
+                  <i class="fas fa-arrows-rotate"></i> 同步所有配置到本地
+                </button>
+              </div>
             </div>
-            <div class="sync-card-footer">
-              <button class="btn-primary w-100" @click="syncConfig" :disabled="syncChecking || syncStatus.inSync">
-                <i class="fas fa-arrows-rotate"></i> 同步所有配置到本地
-              </button>
-            </div>
-          </div>
 
-          <!-- 云端图床同步卡片 -->
-          <div class="sync-card">
-            <div class="sync-card-header">
-              <div class="sync-title">
-                <i class="fas fa-cloud header-icon"></i>
-                <h3>图床云端同步</h3>
+            <!-- 云端图床同步卡片 -->
+            <div class="sync-card">
+              <div class="sync-card-header">
+                <div class="sync-title">
+                  <i class="fas fa-cloud header-icon"></i>
+                  <h3>图床云端同步</h3>
+                </div>
+                <button class="btn-text" @click="checkImgHostSyncStatus(true)" :disabled="imgHostSyncing">
+                  <i class="fas fa-rotate" :class="{ 'fa-spin': imgHostSyncing }"></i> 刷新图床
+                </button>
               </div>
-              <button class="btn-text" @click="checkImgHostSyncStatus(true)" :disabled="imgHostSyncing">
-                <i class="fas fa-rotate" :class="{ 'fa-spin': imgHostSyncing }"></i> 刷新图床
-              </button>
-            </div>
-            <div class="sync-card-body">
-              <div class="img-host-details">
-                <div class="detail-row">
-                  <span class="label">图床服务商</span>
-                  <span class="value">{% raw %}{{ imgHostStatus.provider }}{% endraw %}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="label">云端文件</span>
-                  <span class="value font-num">
-                    {% raw %}{{ imgHostStatus.remoteImageCount }}{% endraw %} 张 ({% raw %}{{ imgHostStatus.remoteStorageSize }}{% endraw %})
-                  </span>
-                </div>
-                <div class="detail-row highlight" v-if="imgHostStatus.uploadCount > 0 || imgHostStatus.downloadCount > 0">
-                  <span class="label">待同步数量</span>
-                  <span class="value sync-badges">
-                    <span v-if="imgHostStatus.uploadCount > 0" class="badge upload-badge">
-                      <i class="fas fa-arrow-up"></i> {% raw %}{{ imgHostStatus.uploadCount }}{% endraw %} 待上传
+              <div class="sync-card-body">
+                <div class="img-host-details">
+                  <div class="detail-row">
+                    <span class="label">图床服务商</span>
+                    <span class="value">{% raw %}{{ imgHostStatus.provider }}{% endraw %}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="label">云端文件</span>
+                    <span class="value font-num">
+                      {% raw %}{{ imgHostStatus.remoteImageCount }}{% endraw %} 张 ({% raw %}{{ imgHostStatus.remoteStorageSize }}{% endraw %})
                     </span>
-                    <span v-if="imgHostStatus.downloadCount > 0" class="badge download-badge">
-                      <i class="fas fa-arrow-down"></i> {% raw %}{{ imgHostStatus.downloadCount }}{% endraw %} 待下载
+                  </div>
+                  <div class="detail-row highlight" v-if="imgHostStatus.uploadCount > 0 || imgHostStatus.downloadCount > 0">
+                    <span class="label">待同步数量</span>
+                    <span class="value sync-badges">
+                      <span v-if="imgHostStatus.uploadCount > 0" class="badge upload-badge">
+                        <i class="fas fa-arrow-up"></i> {% raw %}{{ imgHostStatus.uploadCount }}{% endraw %} 待上传
+                      </span>
+                      <span v-if="imgHostStatus.downloadCount > 0" class="badge download-badge">
+                        <i class="fas fa-arrow-down"></i> {% raw %}{{ imgHostStatus.downloadCount }}{% endraw %} 待下载
+                      </span>
                     </span>
-                  </span>
-                </div>
-                <div class="detail-row" v-else>
-                  <span class="label">状态</span>
-                  <span class="value text-ok"><i class="fas fa-circle-check"></i> 云端已同步</span>
+                  </div>
+                  <div class="detail-row" v-else>
+                    <span class="label">状态</span>
+                    <span class="value text-ok"><i class="fas fa-circle-check"></i> 云端已同步</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="sync-card-footer split-buttons">
-              <button class="btn-primary" @click="syncToRemote" :disabled="imgHostStatus.uploadCount === 0 || imgHostSyncing">
-                <i class="fas fa-cloud-arrow-up"></i> 上传到云端
-              </button>
-              <button class="btn-primary" @click="syncFromRemote" :disabled="imgHostStatus.downloadCount === 0 || imgHostSyncing">
-                <i class="fas fa-cloud-arrow-down"></i> 从云端下载
-              </button>
+              <div class="sync-card-footer split-buttons">
+                <button class="btn-primary" @click="syncToRemote" :disabled="imgHostStatus.uploadCount === 0 || imgHostSyncing">
+                  <i class="fas fa-cloud-arrow-up"></i> 上传到云端
+                </button>
+                <button class="btn-primary" @click="syncFromRemote" :disabled="imgHostStatus.downloadCount === 0 || imgHostSyncing">
+                  <i class="fas fa-cloud-arrow-down"></i> 从云端下载
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -143,24 +138,32 @@
         <!-- 批量操作与工具栏 -->
         <div class="page-toolbar">
           <div class="selection-toolbar">
-            <div class="selection-toolbar-copy">
-              <h2>批量管理</h2>
-              <p id="selection-summary" :class="{ 'active-selection': selectionEnabled && selectedEmojis.size > 0 }">
-                {% raw %}{{ selectionEnabled ? '已选中 ' + selectedEmojis.size + ' 个表情包' : '未开启批量选择' }}{% endraw %}
-              </p>
+            <div class="filter-group">
+              <div class="persona-filter-wrapper">
+                <label for="persona-filter"><i class="fas fa-user-gear icon"></i>过滤人格:</label>
+                <select id="persona-filter" v-model="personaFilter" @change="fetchEmojis">
+                  <option value="">全部可用</option>
+                  <option v-for="p in systemPersonas" :key="p.id" :value="p.id">
+                    {% raw %}{{ p.name }}{% endraw %} ({% raw %}{{ p.id }}{% endraw %})
+                  </option>
+                </select>
+              </div>
             </div>
             <div class="selection-toolbar-actions">
-              <button id="batch-move-btn" class="btn-secondary" :disabled="selectedEmojis.size === 0" @click="openMoveModal">
-                <i class="fas fa-right-left icon"></i>移动已选
-              </button>
+              <span id="selection-summary" :class="{ 'active-selection': selectionEnabled && selectedEmojis.size > 0 }">
+                {% raw %}{{ selectionEnabled ? '已选中 ' + selectedEmojis.size + ' 个' : '批量选择' }}{% endraw %}
+              </span>
               <button id="toggle-selection-mode-btn" class="btn-secondary" :class="{ active: selectionEnabled }" @click="toggleSelectionMode">
-                <i class="fas fa-list-check icon"></i>{% raw %}{{ selectionEnabled ? '退出批量选择' : '开启批量选择' }}{% endraw %}
+                <i class="fas fa-list-check icon"></i>选择
+              </button>
+              <button id="batch-move-btn" class="btn-secondary" :disabled="selectedEmojis.size === 0" @click="openMoveModal">
+                <i class="fas fa-right-left icon"></i>移动
               </button>
               <button id="batch-delete-btn" class="btn-danger" :disabled="selectedEmojis.size === 0" @click="batchDeleteSelected">
-                <i class="fas fa-trash-can icon"></i>删除已选
+                <i class="fas fa-trash-can icon"></i>删除
               </button>
               <button id="clear-all-btn" class="btn-danger-outline" @click="clearAllEmojiFiles">
-                <i class="fas fa-radiation icon"></i>清空全部表情包
+                <i class="fas fa-radiation icon"></i>清空全部
               </button>
             </div>
           </div>
