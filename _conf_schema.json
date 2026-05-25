@@ -245,5 +245,16 @@
     "type": "bool",
     "default": false,
     "hint": "开启后将尝试压缩动图GIF（由于可能损坏动画帧，建议关闭）"
+  },
+  "compression_format": {
+    "description": "表情包压缩格式",
+    "type": "string",
+    "default": "original",
+    "options": [
+      "original",
+      "webp",
+      "avif"
+    ],
+    "hint": "选择压缩后的图片保存格式。建议选择 webp 以兼顾体积和聊天客户端兼容性；original 保持原格式；avif 拥有最大压缩率（动图仍为 gif）"
   }
 }

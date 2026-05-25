@@ -238,23 +238,39 @@ def compress_image(
     quality: int,
     compress_gif: bool,
     filename: str,
-) -> bytes:
-    """压缩单张图片"""
+    compression_format: str = "original",
+) -> tuple[bytes, str]:
+    """压缩单张图片，支持格式转换(webp/avif)"""
     try:
         import io
 
         from PIL import Image as PILImage
-
-        size_kb = len(image_bytes) / 1024
-        if size_kb <= max_size_kb:
-            return image_bytes
+        from PIL import features
 
         ext = Path(filename).suffix.lower()
         if ext == ".gif" and not compress_gif:
-            return image_bytes
+            return image_bytes, filename
+
+        target_format = None
+        new_filename = filename
+        if compression_format == "webp" and ext != ".webp":
+            target_format = "WEBP"
+            new_filename = str(Path(filename).with_suffix(".webp"))
+        elif compression_format == "avif" and ext != ".avif":
+            if features.check("avif"):
+                target_format = "AVIF"
+                new_filename = str(Path(filename).with_suffix(".avif"))
+            else:
+                logger.warning("Pillow 不支持 AVIF，自动回退到 WEBP 格式进行压缩。")
+                target_format = "WEBP"
+                new_filename = str(Path(filename).with_suffix(".webp"))
 
         img = PILImage.open(io.BytesIO(image_bytes))
         orig_format = img.format or "JPEG"
+
+        save_format = target_format or orig_format
+        if save_format == "JPG":
+            save_format = "JPEG"
 
         width, height = img.size
         if width > max_width:
@@ -264,9 +280,8 @@ def compress_image(
 
         out_io = io.BytesIO()
 
-        save_format = orig_format
         save_args = {}
-        if save_format in ("JPEG", "JPG", "WEBP"):
+        if save_format in ("JPEG", "WEBP", "AVIF"):
             save_args["quality"] = quality
         elif save_format == "PNG":
             save_args["optimize"] = True
@@ -274,12 +289,19 @@ def compress_image(
         img.save(out_io, format=save_format, **save_args)
         compressed_bytes = out_io.getvalue()
 
-        if len(compressed_bytes) < len(image_bytes):
+        size_kb = len(image_bytes) / 1024
+        new_size_kb = len(compressed_bytes) / 1024
+
+        if target_format:
             logger.info(
-                f"图片压缩成功: {size_kb:.1f}KB -> {len(compressed_bytes) / 1024:.1f}KB"
+                f"图片格式转换成功 ({orig_format} -> {save_format}): {size_kb:.1f}KB -> {new_size_kb:.1f}KB"
             )
-            return compressed_bytes
-        return image_bytes
+            return compressed_bytes, new_filename
+        else:
+            if size_kb > max_size_kb and len(compressed_bytes) < len(image_bytes):
+                logger.info(f"图片压缩成功: {size_kb:.1f}KB -> {new_size_kb:.1f}KB")
+                return compressed_bytes, filename
+            return image_bytes, filename
     except Exception as e:
-        logger.error(f"压缩图片失败: {e}", exc_info=True)
-        return image_bytes
+        logger.error(f"压缩/转换图片失败: {e}", exc_info=True)
+        return image_bytes, filename

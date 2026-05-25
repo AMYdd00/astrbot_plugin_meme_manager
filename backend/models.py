@@ -121,8 +121,15 @@ def save_and_register_meme(
         max_width = cfg.get("compression_max_width", 1024)
         quality = cfg.get("compression_quality", 80)
         compress_gif = cfg.get("compress_gif", False)
-        image_bytes = compress_image(
-            image_bytes, max_size_kb, max_width, quality, compress_gif, filename
+        compression_format = cfg.get("compression_format", "original")
+        image_bytes, filename = compress_image(
+            image_bytes,
+            max_size_kb,
+            max_width,
+            quality,
+            compress_gif,
+            filename,
+            compression_format,
         )
 
     # 2. 生成安全文件名

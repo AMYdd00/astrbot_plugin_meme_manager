@@ -524,6 +524,7 @@ class CommandsHandler:
         max_width = cfg.get("compression_max_width", 1024)
         quality = cfg.get("compression_quality", 80)
         compress_gif = cfg.get("compress_gif", False)
+        compression_format = cfg.get("compression_format", "original")
 
         from .database import get_db_conn
 
@@ -531,9 +532,9 @@ class CommandsHandler:
         cursor = conn.cursor()
         cursor.execute("SELECT filename FROM memes")
         rows = cursor.fetchall()
-        conn.close()
 
         if not rows:
+            conn.close()
             yield event.plain_result("📭 数据库中没有注册的表情包文件。")
             return
 
@@ -558,19 +559,32 @@ class CommandsHandler:
 
                 orig_size = len(orig_bytes)
 
-                new_bytes = compress_image(
+                new_bytes, new_filename = compress_image(
                     image_bytes=orig_bytes,
                     max_size_kb=max_size_kb,
                     max_width=max_width,
                     quality=quality,
                     compress_gif=compress_gif,
                     filename=filename,
+                    compression_format=compression_format,
                 )
 
                 new_size = len(new_bytes)
-                if new_size < orig_size:
-                    with open(file_path, "wb") as f:
+                if new_filename != filename or new_size < orig_size:
+                    new_file_path = os.path.join(MEMES_DIR, new_filename)
+                    with open(new_file_path, "wb") as f:
                         f.write(new_bytes)
+
+                    if new_filename != filename:
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                            except Exception as ex:
+                                logger.warning(f"无法删除原格式图片 {file_path}: {ex}")
+                        cursor.execute(
+                            "UPDATE memes SET filename = ? WHERE filename = ?",
+                            (new_filename, filename),
+                        )
                     compressed_count += 1
                     total_saved_bytes += orig_size - new_size
                 else:
@@ -578,6 +592,9 @@ class CommandsHandler:
             except Exception as e:
                 logger.error(f"手动压缩表情包 {filename} 失败: {e}")
                 failed_count += 1
+
+        conn.commit()
+        conn.close()
 
         saved_mb = total_saved_bytes / (1024 * 1024)
         yield event.plain_result(
