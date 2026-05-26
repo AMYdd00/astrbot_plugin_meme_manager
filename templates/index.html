@@ -223,11 +223,6 @@
                     
                     <!-- 删除按钮 -->
                     <button class="delete-btn" @click.stop="deleteEmoji(activeCategory, emoji)">&times;</button>
-                    
-                    <!-- 编辑属性按钮 -->
-                    <button class="edit-btn" @click.stop="toggleDetailDrawer(activeCategory, emoji)">
-                      <i class="fas fa-pen"></i>
-                    </button>
                   </div>
 
                   <!-- 表情包卡片底部多标签 -->
@@ -238,53 +233,7 @@
                   </div>
                 </div>
 
-                <!-- 行内属性抽屉面板 -->
-                <div v-if="activeDetailEmoji === emoji" 
-                     id="emoji-detail-drawer" 
-                     class="emoji-detail-drawer" 
-                     :class="{ loading: detailDrawerLoading }">
-                  <div v-if="detailDrawerLoading"></div>
-                  <template v-else>
-                    <div class="drawer-header">
-                      <span class="drawer-title">编辑属性: {% raw %}{{ emoji }}{% endraw %}</span>
-                      <button class="drawer-close-btn" @click="closeDetailDrawer">&times;</button>
-                    </div>
-                    <div class="drawer-content">
-                      <!-- 标签多选 -->
-                      <div class="drawer-section">
-                        <label>分类标签 (点击进行选择/取消选择)</label>
-                        <div class="drawer-tags-picker">
-                          <span v-for="cat in Object.keys(emojiData)" 
-                                :key="cat" 
-                                class="picker-tag-pill" 
-                                :class="{ active: selectedEmotions.includes(cat) }" 
-                                @click="toggleTagInDrawer(cat)">
-                            {% raw %}{{ cat }}{% endraw %}
-                          </span>
-                        </div>
-                      </div>
 
-                      <!-- 人格可用性多选 -->
-                      <div class="drawer-section">
-                        <label>允许的人格限制 (留空或勾选全部表示全局可用)</label>
-                        <div class="drawer-personas-list">
-                          <label>
-                            <input type="checkbox" value="*" :checked="selectedPersonas.includes('*')" @change="togglePersonaInDrawer('*')" />
-                            <span>全局可用 (*)</span>
-                          </label>
-                          <label v-for="p in systemPersonas" :key="p.id">
-                            <input type="checkbox" :value="p.id" :checked="selectedPersonas.includes(p.id) && !selectedPersonas.includes('*')" @change="togglePersonaInDrawer(p.id)" />
-                            <span>{% raw %}{{ p.name }}{% endraw %} ({% raw %}{{ p.id }}{% endraw %})</span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="drawer-actions">
-                      <button class="btn-secondary" @click="closeDetailDrawer">取消</button>
-                      <button class="btn-primary" @click="saveEmojiAttributes">保存修改</button>
-                    </div>
-                  </template>
-                </div>
               </template>
 
               <!-- 上传卡片 -->
@@ -423,6 +372,55 @@
               保存修改
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- 表情包编辑属性模态框 -->
+      <div v-if="activeDetailEmoji" class="emoji-detail-modal" role="dialog" aria-modal="true" @click.self="closeDetailDrawer">
+        <div class="emoji-detail-modal-card" :class="{ loading: detailDrawerLoading }">
+          <div v-if="detailDrawerLoading" class="loading-state" style="justify-content: center; padding: 40px;">
+            <i class="fas fa-circle-notch fa-spin fa-2x" style="color: var(--primary-color);"></i>
+          </div>
+          <template v-else>
+            <div class="drawer-header">
+              <span class="drawer-title">编辑属性: {% raw %}{{ activeDetailEmoji }}{% endraw %}</span>
+              <button class="drawer-close-btn" @click="closeDetailDrawer">&times;</button>
+            </div>
+            <div class="drawer-content">
+              <!-- 标签多选 -->
+              <div class="drawer-section">
+                <label>分类标签 (点击进行选择/取消选择)</label>
+                <div class="drawer-tags-picker">
+                  <span v-for="cat in Object.keys(emojiData)" 
+                        :key="cat" 
+                        class="picker-tag-pill" 
+                        :class="{ active: selectedEmotions.includes(cat) }" 
+                        @click="toggleTagInDrawer(cat)">
+                    {% raw %}{{ cat }}{% endraw %}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 人格可用性多选 -->
+              <div class="drawer-section">
+                <label>允许的人格限制 (留空或勾选全部表示全局可用)</label>
+                <div class="drawer-personas-list">
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-primary); text-transform: none; letter-spacing: normal;">
+                    <input type="checkbox" value="*" :checked="selectedPersonas.includes('*')" @change="togglePersonaInDrawer('*')" style="width: 14px; height: 14px;" />
+                    <span>全局可用 (*)</span>
+                  </label>
+                  <label v-for="p in systemPersonas" :key="p.id" style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-primary); text-transform: none; letter-spacing: normal;">
+                    <input type="checkbox" :value="p.id" :checked="selectedPersonas.includes(p.id) && !selectedPersonas.includes('*')" @change="togglePersonaInDrawer(p.id)" style="width: 14px; height: 14px;" />
+                    <span>{% raw %}{{ p.name }}{% endraw %} ({% raw %}{{ p.id }}{% endraw %})</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="drawer-actions">
+              <button class="btn-secondary" @click="closeDetailDrawer">取消</button>
+              <button class="btn-primary" @click="saveEmojiAttributes">保存修改</button>
+            </div>
+          </template>
         </div>
       </div>
 
