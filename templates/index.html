@@ -150,6 +150,11 @@
               </div>
             </div>
             <div class="selection-toolbar-actions">
+              <!-- 添加分类按钮 (常驻) -->
+              <button id="add-category-btn-top" class="btn-secondary" @click="addCategoryForm.visible = true">
+                <i class="fas fa-plus icon"></i>添加分类
+              </button>
+
               <span id="selection-summary" :class="{ 'active-selection': selectionEnabled && selectedEmojis.size > 0 }">
                 {% raw %}{{ selectionEnabled ? '已选中 ' + selectedEmojis.size + ' 个' : '批量选择' }}{% endraw %}
               </span>
@@ -158,6 +163,9 @@
               </button>
               <button id="batch-persona-btn" class="btn-secondary" :disabled="selectedEmojis.size === 0" @click="openBatchPersonaModal">
                 <i class="fas fa-user-gear icon"></i>设置人格
+              </button>
+              <button id="batch-gif-btn" class="btn-secondary" :disabled="selectedEmojis.size === 0" @click="batchConvertToGif">
+                <i class="fas fa-file-image icon"></i>转换为 GIF
               </button>
               <button id="batch-delete-btn" class="btn-danger" :disabled="selectedEmojis.size === 0" @click="batchDeleteSelected">
                 <i class="fas fa-trash-can icon"></i>删除
@@ -277,25 +285,6 @@
           </div>
         </div>
 
-        <!-- 添加类别表单/按钮 -->
-        <button v-if="!addCategoryForm.visible" id="add-category-btn" @click="addCategoryForm.visible = true">
-          <i class="fas fa-plus-circle icon"></i>添加新分类
-        </button>
-        <div v-else id="add-category-form" class="add-category-panel">
-          <h3>添加新分类</h3>
-          <div class="form-group">
-            <input type="text" v-model="addCategoryForm.name" placeholder="分类名称" class="form-control" />
-            <input type="text" v-model="addCategoryForm.description" placeholder="分类描述" class="form-control" />
-          </div>
-          <div class="panel-actions">
-            <button class="btn-primary" @click="saveNewCategory">
-              <i class="fas fa-save icon"></i> 保存分类
-            </button>
-            <button class="btn-secondary" @click="addCategoryForm.visible = false">
-              取消
-            </button>
-          </div>
-        </div>
       </main>
 
       <!-- 确认操作模态框 -->
@@ -389,6 +378,26 @@
         </div>
       </div>
 
+      <!-- 添加类别模态框 -->
+      <div v-if="addCategoryForm.visible" class="category-edit-modal" role="dialog" aria-modal="true">
+        <div class="category-edit-modal-card">
+          <p class="category-edit-modal-eyebrow">类别管理</p>
+          <h2>添加新分类</h2>
+          <div class="category-edit-form-panel">
+            <label>分类名称</label>
+            <input type="text" v-model="addCategoryForm.name" placeholder="分类名称" class="form-control" />
+            <label style="margin-top: 10px;">分类描述</label>
+            <input type="text" v-model="addCategoryForm.description" placeholder="分类描述" class="form-control" />
+          </div>
+          <div class="category-edit-modal-actions">
+            <button class="btn-secondary" @click="addCategoryForm.visible = false">取消</button>
+            <button class="btn-primary" @click="saveNewCategory">
+              保存分类
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 表情包编辑属性模态框 -->
       <div v-if="activeDetailEmoji" class="emoji-detail-modal" role="dialog" aria-modal="true" @click.self="closeDetailDrawer">
         <div class="emoji-detail-modal-card" :class="{ loading: detailDrawerLoading }">
@@ -457,6 +466,9 @@
           </button>
           <button class="secondary" @click="contextMenuCopy">
             <i class="fas fa-copy icon"></i>复制文件
+          </button>
+          <button class="secondary" @click="contextMenuConvertToGif">
+            <i class="fas fa-file-image icon"></i>转换为 GIF
           </button>
           <button :disabled="contextMenu.pasteableItems.length === 0" @click="contextMenuPaste">
             <i class="fas fa-paste icon"></i>粘贴文件 ({% raw %}{{ contextMenu.pasteableItems.length }}{% endraw %})

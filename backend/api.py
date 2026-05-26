@@ -7,6 +7,7 @@ from ..config import MEMES_DIR
 from .models import (
     DuplicateEmojiError,
     add_emoji_to_category,
+    batch_convert_to_gif,
     batch_copy_emojis,
     batch_delete_emojis,
     batch_move_emojis,
@@ -204,6 +205,19 @@ async def batch_delete_emoji():
             "missing_count": len(missing_files),
         }
     ), 200
+
+
+@api.route("/emoji/batch_convert_gif", methods=["POST"])
+async def batch_convert_emoji_gif():
+    """批量将表情文件转换为 GIF 格式"""
+    data = await request.get_json()
+    filenames = data.get("filenames")
+
+    if not isinstance(filenames, list) or not filenames:
+        return jsonify({"message": "filenames list is required"}), 400
+
+    result = batch_convert_to_gif(filenames)
+    return jsonify(result), 200
 
 
 @api.route("/emoji/move", methods=["POST"])

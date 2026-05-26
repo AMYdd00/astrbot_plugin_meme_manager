@@ -536,6 +536,44 @@ createApp({
       await fetchEmojis();
     };
 
+    const batchConvertToGif = async () => {
+      const items = Array.from(selectedEmojis.value.values());
+      if (items.length === 0) return;
+
+      const confirmed = await confirm(
+        "转换为 GIF",
+        `确认将选中的 ${items.length} 个表情包转换为 GIF 格式吗？(移动端 QQ 对 WEBP 动图支持不佳，推荐转换)`,
+        "确认转换",
+        "primary"
+      );
+      if (!confirmed) return;
+
+      const filenames = Array.from(new Set(items.map(item => item.emoji)));
+      
+      try {
+        const res = await fetch("/api/emoji/batch_convert_gif", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filenames }),
+        });
+        if (res.ok) {
+          const result = await res.json();
+          showToast(
+            `成功转换 ${result.converted_count} 个，跳过 ${result.skipped_count} 个，失败 ${result.failed_count} 个。`,
+            "success",
+            "转换完成"
+          );
+        } else {
+          throw new Error("转换请求失败");
+        }
+      } catch (e) {
+        showToast(e.message, "error", "转换失败");
+      }
+
+      selectedEmojis.value.clear();
+      await fetchEmojis();
+    };
+
     const openBatchPersonaModal = () => {
       batchPersonaModal.personas = ["*"];
       batchPersonaModal.visible = true;
@@ -977,6 +1015,46 @@ createApp({
       showToast(`已成功复制 ${clipboardItems.value.length} 个表情到剪贴板，可在其他分类右键粘贴。`, "success", "复制成功");
     };
 
+    const contextMenuConvertToGif = async () => {
+      contextMenu.visible = false;
+      const count = contextMenu.targetItems.length;
+      if (count === 0) return;
+
+      const confirmed = await confirm(
+        "转换为 GIF",
+        `确认将选中的 ${count} 个表情包转换为 GIF 格式吗？(移动端 QQ 对 WEBP 动图支持不佳，推荐转换)`,
+        "确认转换",
+        "primary"
+      );
+      if (!confirmed) return;
+
+      const filenames = Array.from(new Set(contextMenu.targetItems.map(item => item.emoji)));
+      
+      try {
+        const res = await fetch("/api/emoji/batch_convert_gif", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filenames }),
+        });
+        if (res.ok) {
+          const result = await res.json();
+          showToast(
+            `成功转换 ${result.converted_count} 个，跳过 ${result.skipped_count} 个，失败 ${result.failed_count} 个。`,
+            "success",
+            "转换完成"
+          );
+        } else {
+          throw new Error("转换请求失败");
+        }
+      } catch (e) {
+        showToast(e.message, "error", "转换失败");
+      }
+
+      // Clear selection if those items were in selectedEmojis
+      contextMenu.targetItems.forEach((i) => selectedEmojis.value.delete(`${i.category}:${i.emoji}`));
+      await fetchEmojis();
+    };
+
     const contextMenuPaste = async () => {
       contextMenu.visible = false;
       const targetCategory = contextMenu.targetCategory;
@@ -1165,7 +1243,6 @@ createApp({
       await fetchEmojis();
       await fetchPersonas();
       void checkSyncStatus(false);
-      void checkImgHostSyncStatus(false);
     });
 
     return {
@@ -1244,6 +1321,8 @@ createApp({
       contextMenuMove,
       contextMenuCopy,
       contextMenuPaste,
+      batchConvertToGif,
+      contextMenuConvertToGif,
       checkSyncStatus,
       syncConfig,
       restoreCategory,

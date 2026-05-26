@@ -507,3 +507,120 @@ def update_emoji_in_category(category, old_image_file, new_image_file):
     # 添加新的表情包到该分类
     add_emoji_to_category(category, new_image_file)
     return True
+
+
+def batch_convert_to_gif(image_files: list[str]) -> dict[str, object]:
+    """批量将表情文件转换为 GIF 格式"""
+    converted_files = []
+    failed_files = []
+    skipped_files = []
+
+    from PIL import Image as PILImage
+
+    conn = get_db_conn()
+    cursor = conn.cursor()
+
+    for filename in image_files:
+        filename = Path(filename).name
+        if filename.lower().endswith(".gif"):
+            skipped_files.append(filename)
+            continue
+
+        file_path = Path(MEMES_DIR) / filename
+        if not file_path.is_file():
+            failed_files.append(filename)
+            continue
+
+        try:
+            with PILImage.open(file_path) as img:
+                orig_format = img.format
+                if orig_format == "GIF":
+                    skipped_files.append(filename)
+                    continue
+
+                stem = file_path.stem
+                new_filename = secure_filename(f"{stem}.gif")
+                dest_path = Path(MEMES_DIR) / new_filename
+
+                if dest_path.exists():
+                    idx = 1
+                    while True:
+                        new_filename = secure_filename(f"{stem}_{idx}.gif")
+                        dest_path = Path(MEMES_DIR) / new_filename
+                        if not dest_path.exists():
+                            break
+                        idx += 1
+
+                is_animated = getattr(img, "is_animated", False)
+                if is_animated:
+                    duration = img.info.get("duration", 100)
+                    loop = img.info.get("loop", 0)
+                    frames = []
+
+                    for frame_idx in range(img.n_frames):
+                        img.seek(frame_idx)
+                        frame = img.copy()
+                        if frame.mode in ("RGBA", "LA") or (
+                            frame.mode == "P" and "transparency" in frame.info
+                        ):
+                            background = PILImage.new(
+                                "RGBA", frame.size, (255, 255, 255, 0)
+                            )
+                            if frame.mode == "P":
+                                frame = frame.convert("RGBA")
+                            background.paste(frame, mask=frame.split()[3])
+                            frames.append(background)
+                        else:
+                            frames.append(frame.convert("RGB"))
+
+                    frames[0].save(
+                        dest_path,
+                        format="GIF",
+                        save_all=True,
+                        append_images=frames[1:],
+                        duration=duration,
+                        loop=loop,
+                        disposal=2,
+                    )
+                else:
+                    if img.mode in ("RGBA", "LA") or (
+                        img.mode == "P" and "transparency" in img.info
+                    ):
+                        background = PILImage.new("RGB", img.size, (255, 255, 255))
+                        if img.mode == "P":
+                            img = img.convert("RGBA")
+                        background.paste(img, mask=img.split()[3])
+                        img = background
+                    else:
+                        img = img.convert("RGB")
+                    img.save(dest_path, "GIF")
+
+            # 计算新哈希
+            new_hash = _calculate_file_hash(dest_path.read_bytes())
+
+            # 更新数据库
+            cursor.execute(
+                "UPDATE memes SET filename = ?, original_hash = ? WHERE filename = ?",
+                (new_filename, new_hash, filename),
+            )
+
+            # 删除旧文件
+            file_path.unlink()
+
+            converted_files.append({"original": filename, "converted": new_filename})
+
+        except Exception as e:
+            logger.error(f"转换 {filename} 为 GIF 失败: {e}", exc_info=True)
+            failed_files.append(filename)
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "converted": converted_files,
+        "failed": failed_files,
+        "skipped": skipped_files,
+        "converted_count": len(converted_files),
+        "failed_count": len(failed_files),
+        "skipped_count": len(skipped_files),
+    }
