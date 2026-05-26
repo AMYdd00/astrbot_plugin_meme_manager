@@ -53,6 +53,83 @@ class EventHandlers:
         return persona_id
 
     @staticmethod
+    async def _select_memes_by_emotions_priority(
+        sender, found_emotions: list[str], persona_id: str
+    ) -> list[str]:
+        """根据情绪标签的重合度优先级筛选并随机推荐表情包图片。
+
+        优先返回满足更多情绪标签的表情图片。
+        """
+        if not found_emotions:
+            return []
+
+        from .database import get_db_conn
+
+        conn = get_db_conn()
+        cursor = conn.cursor()
+
+        # 构建 SQL 条件：匹配指定人格或全局，并且至少匹配其中一个情绪标签 (OR)
+        conditions = []
+        params = []
+
+        conditions.append("(personas = '*' OR ',' || personas || ',' LIKE ?)")
+        params.append(f"%,{persona_id},%")
+
+        emotion_conditions = []
+        for emotion in found_emotions:
+            if emotion:
+                emotion_conditions.append("',' || emotions || ',' LIKE ?")
+                params.append(f"%,{emotion},%")
+
+        if emotion_conditions:
+            conditions.append(f"({' OR '.join(emotion_conditions)})")
+
+        sql = f"SELECT filename, emotions FROM memes WHERE {' AND '.join(conditions)}"
+        cursor.execute(sql, tuple(params))
+        rows = cursor.fetchall()
+        conn.close()
+
+        # 评分并筛选出本地确实存在的文件
+        valid_memes = []
+        for row in rows:
+            filename = row["filename"]
+            full_path = os.path.join(MEMES_DIR, filename)
+            if os.path.exists(full_path):
+                # 计算与当前匹配情绪列表的重合数作为评分
+                meme_emotions = (
+                    [e.strip() for e in row["emotions"].split(",") if e.strip()]
+                    if row["emotions"]
+                    else []
+                )
+                score = sum(1 for e in found_emotions if e in meme_emotions)
+                valid_memes.append((filename, score))
+
+        if not valid_memes:
+            return []
+
+        # 按评分分组
+        score_groups = {}
+        for filename, score in valid_memes:
+            score_groups.setdefault(score, []).append(filename)
+
+        # 从高分到低分依次填充选择池，直至达到 max_emotions_per_message
+        selected_memes = []
+        sorted_scores = sorted(score_groups.keys(), reverse=True)
+        max_limit = sender.max_emotions_per_message
+
+        for score in sorted_scores:
+            group_memes = score_groups[score]
+            random.shuffle(group_memes)
+            for m in group_memes:
+                selected_memes.append(m)
+                if len(selected_memes) >= max_limit:
+                    break
+            if len(selected_memes) >= max_limit:
+                break
+
+        return selected_memes
+
+    @staticmethod
     async def resp(sender, event: AstrMessageEvent, response: LLMResponse):
         """处理 LLM 响应，识别表情"""
         if not response or not response.completion_text:
@@ -281,7 +358,7 @@ class EventHandlers:
                 break
 
         sender.found_emotions = filtered_emotions
-        logger.debug(
+        logger.info(
             f"[meme_manager] 去重后的最终表情列表 (去重及限额后): {sender.found_emotions}"
         )
 
@@ -330,24 +407,6 @@ class EventHandlers:
                                 if sender.content_cleanup_rule
                                 else component.text
                             )
-                            if cleaned.strip():
-                                cleaned_components.append(Plain(cleaned.strip()))
-                        else:
-                            cleaned_components.append(component)
-
-                elif isinstance(original_chain, list):
-                    for component in original_chain:
-                        if isinstance(component, Plain):
-                            cleaned = (
-                                re.sub(sender.content_cleanup_rule, "", component.text)
-                                if sender.content_cleanup_rule
-                                else component.text
-                            )
-                            if cleaned.strip():
-                                cleaned_components.append(Plain(cleaned.strip()))
-                        else:
-                            cleaned_components.append(component)
-
             if sender.found_emotions:
                 random_value = random.randint(1, 100)
                 threshold = sender.emotions_probability
@@ -362,59 +421,17 @@ class EventHandlers:
                     emotion_images = []
                     temp_files = []
 
-                    from .database import get_db_conn
-
-                    conn = get_db_conn()
-                    cursor = conn.cursor()
-
-                    for emotion in sender.found_emotions:
-                        if not emotion:
-                            continue
-
-                        logger.debug(
-                            f"[meme_manager] 正在查找表情 '{emotion}' 对应的图片..."
+                    selected_memes = (
+                        await EventHandlers._select_memes_by_emotions_priority(
+                            sender, sender.found_emotions, persona_id
                         )
-                        # 优先查找当前人格专属表情包
-                        cursor.execute(
-                            "SELECT filename FROM memes WHERE (',' || emotions || ',' LIKE ?) AND (',' || personas || ',' LIKE ?)",
-                            (f"%,{emotion},%", f"%,{persona_id},%"),
-                        )
-                        rows = cursor.fetchall()
+                    )
 
-                        if not rows:
-                            logger.debug(
-                                "[meme_manager] 未找到专属表情，降级查找全局表情包..."
-                            )
-                            # 降级查找全局表情包
-                            cursor.execute(
-                                "SELECT filename FROM memes WHERE (',' || emotions || ',' LIKE ?) AND (personas = '*')",
-                                (f"%,{emotion},%",),
-                            )
-                            rows = cursor.fetchall()
-
-                        memes = [row["filename"] for row in rows]
-                        logger.debug(
-                            f"[meme_manager] 数据库中匹配表情 '{emotion}' 的文件名列表: {memes}"
-                        )
-
-                        # 确保文件实际存在
-                        valid_memes = []
-                        for m in memes:
-                            full_path = os.path.join(MEMES_DIR, m)
-                            if os.path.exists(full_path):
-                                valid_memes.append(m)
-                            else:
-                                logger.warning(
-                                    f"[meme_manager] 数据库记录存在但本地文件缺失: {full_path}"
-                                )
-
-                        if not valid_memes:
-                            logger.warning("[meme_manager] 没有可用的表情图片文件。")
-                            continue
-
-                        meme = random.choice(valid_memes)
+                    for meme in selected_memes:
                         meme_file = os.path.join(MEMES_DIR, meme)
-                        logger.info(f"[meme_manager] 随机选中表情图片: {meme_file}")
+                        logger.debug(
+                            f"[meme_manager] 随机选中表情图片 (重合度得分): {meme_file}"
+                        )
 
                         try:
                             final_meme_file = EventHandlers._convert_to_gif(
@@ -425,8 +442,6 @@ class EventHandlers:
                             emotion_images.append(Image.fromFileSystem(final_meme_file))
                         except Exception as e:
                             logger.error(f"添加表情图片失败: {e}")
-
-                    conn.close()
 
                     if emotion_images:
                         if temp_files:
@@ -505,12 +520,12 @@ class EventHandlers:
             if pending_images:
                 for image in pending_images:
                     if event.get_platform_name() == "gewechat":
-                        logger.info(
+                        logger.debug(
                             "[meme_manager] (gewechat) 正在直接通过 event.send 补发表情图片..."
                         )
                         await event.send(MessageChain([image]))
                     else:
-                        logger.info(
+                        logger.debug(
                             f"[meme_manager] 正在通过 context.send_message 补发表情图片到 {event.unified_msg_origin}..."
                         )
                         await sender.context.send_message(
@@ -668,7 +683,6 @@ class EventHandlers:
             return "请输入至少一个有效的标签/分类名称。"
 
         # 3. 获取当前会话的人格 ID (persona_id)
-        # 3. 获取当前会话的人格 ID (persona_id)
         persona_id = await EventHandlers._get_persona_id(sender, event)
 
         # 4. 下载图片
@@ -725,14 +739,23 @@ class EventHandlers:
                     if category in valid_categories:
                         resolved_categories.append(category)
                     else:
+                        # 检查是否匹配描述
+                        matched_cat = None
                         for cat, desc in sender.category_mapping.items():
                             if category == desc:
-                                resolved_categories.append(cat)
+                                matched_cat = cat
                                 break
+                        if matched_cat:
+                            resolved_categories.append(matched_cat)
                         else:
-                            invalid_categories.append(category)
+                            # 允许作为自定义的新标签
+                            clean_cat = category.lower()
+                            if len(clean_cat) <= 20:
+                                resolved_categories.append(clean_cat)
+                            else:
+                                invalid_categories.append(category)
 
-            # B. 如果解析后没有得到任何合法的分类，且启用了多模态，则调用多模态模型自动分类
+            # B. 如果解析后没有得到任何分类，且启用了多模态，则调用多模态模型自动分类
             multimodal_called = False
             multimodal_failed = False
             if not resolved_categories and getattr(
@@ -760,20 +783,26 @@ class EventHandlers:
 
                     valid_descriptions = sender.category_manager.get_descriptions()
                     prompt = (
-                        "你是一个表情包分类器。请分析上传的图片，并从以下给定的表情包分类列表中，挑选出最符合这幅图片的分类（可以是一个或多个）。\n"
-                        "注意：你只能从给定的分类列表中选择，不要自己创造新的分类。\n\n"
-                        "可选的分类列表：\n"
+                        "请对这张图片进行视觉分析，并生成 1-2 个最契合此图的情绪或场景标签（例如: happy, sad, angry, cat, sleep, work 等）。\n"
+                        "【已有标签列表】：\n"
                     )
                     for cat, desc in valid_descriptions.items():
-                        prompt += f"- {cat}: {desc}\n"
+                        prompt += f"- {cat}"
+                        if desc and desc != "请添加描述":
+                            prompt += f": {desc}"
+                        prompt += "\n"
                     prompt += (
-                        "\n请仅以 JSON 数组格式输出选中的分类，例如：\n"
-                        '["分类1", "分类2"]\n'
+                        "\n【打标签规则】：\n"
+                        "1. 优先从上述已有的标签列表中选择最契合的标签。\n"
+                        "2. 如果图片内容完全不符合已有标签，允许你自行拟定 1-2 个最契合的简短英文/中文情绪或场景词汇作为新标签（英文优先，如 tired, gaming 等）。\n"
+                        '3. 请仅以 JSON 数组格式返回，例如：["happy", "cat"]\n'
                         "不要返回任何其他内容（如 markdown 代码块标记、解释等），只返回 JSON 数组。"
                     )
 
                     try:
-                        logger.info(f"正在调用多模态模型 {provider_id} 判定表情分类...")
+                        logger.debug(
+                            f"正在调用多模态模型 {provider_id} 判定表情分类..."
+                        )
                         llm_resp = await sender.context.llm_generate(
                             chat_provider_id=provider_id,
                             prompt=prompt,
@@ -802,14 +831,15 @@ class EventHandlers:
                                         parsed_categories.append(cat)
 
                             if parsed_categories:
-                                logger.info(
+                                logger.debug(
                                     f"多模态模型判定表情分类为: {parsed_categories}"
                                 )
                                 for cat in parsed_categories:
                                     cat = cat.strip()
-                                    if cat in valid_descriptions:
+                                    if cat in valid_categories:
                                         resolved_categories.append(cat)
                                     else:
+                                        matched_cat = None
                                         for (
                                             real_cat,
                                             desc,
@@ -818,7 +848,12 @@ class EventHandlers:
                                                 resolved_categories.append(real_cat)
                                                 break
                                         else:
-                                            invalid_categories.append(cat)
+                                            # 允许作为自定义的新标签
+                                            clean_cat = cat.lower()
+                                            if len(clean_cat) <= 20:
+                                                resolved_categories.append(clean_cat)
+                                            else:
+                                                invalid_categories.append(cat)
                         if not resolved_categories:
                             multimodal_failed = True
                     except Exception as e:
@@ -876,7 +911,7 @@ class EventHandlers:
                 await sender.reload_emotions()
 
                 invalid_tip = (
-                    f"（忽略了无效的分类 {invalid_categories}）"
+                    f"（忽略了无效的标签 {invalid_categories}）"
                     if invalid_categories
                     else ""
                 )
@@ -905,18 +940,19 @@ class EventHandlers:
                 original_hash=raw_hash,
             )
 
+            invalid_tip = (
+                f"（忽略了无效的标签 {invalid_categories}）"
+                if invalid_categories
+                else ""
+            )
+
             sync_tip = ""
             if sender.img_sync:
                 sync_tip = "\n☁️ 检测到已配置图床，如需同步到云端请使用命令：同步到云端"
 
             await sender.reload_emotions()
 
-            invalid_tip = (
-                f"（忽略了无效的分类 {invalid_categories}）"
-                if invalid_categories
-                else ""
-            )
-            return f"成功收录表情包「{res['filename']}」到分类【{', '.join(resolved_categories)}】中，且仅供人格【{persona_id}】使用。{invalid_tip}{sync_tip}"
+            return f"成功收录表情包「{res['filename']}」到标签【{', '.join(resolved_categories)}】中，且仅供人格【{persona_id}】使用。{invalid_tip}{sync_tip}"
 
         except Exception as e:
             logger.error(f"偷表情包失败: {e}", exc_info=True)
@@ -1040,42 +1076,16 @@ class EventHandlers:
             if random_value > sender.emotions_probability:
                 return
 
-            for emotion in sender.found_emotions:
-                if not emotion:
-                    continue
+            persona_id = await EventHandlers._get_persona_id(sender, event)
+            selected_memes = await EventHandlers._select_memes_by_emotions_priority(
+                sender, sender.found_emotions, persona_id
+            )
 
-                from .database import get_db_conn
-
-                persona_id = await EventHandlers._get_persona_id(sender, event)
-
-                conn = get_db_conn()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT filename FROM memes WHERE (',' || emotions || ',' LIKE ?) AND (',' || personas || ',' LIKE ?)",
-                    (f"%,{emotion},%", f"%,{persona_id},%"),
-                )
-                rows = cursor.fetchall()
-
-                if not rows:
-                    cursor.execute(
-                        "SELECT filename FROM memes WHERE (',' || emotions || ',' LIKE ?) AND (personas = '*')",
-                        (f"%,{emotion},%",),
-                    )
-                    rows = cursor.fetchall()
-
-                memes = [row["filename"] for row in rows]
-                conn.close()
-
-                valid_memes = []
-                for m in memes:
-                    if os.path.exists(os.path.join(MEMES_DIR, m)):
-                        valid_memes.append(m)
-
-                if not valid_memes:
-                    continue
-
-                meme = random.choice(valid_memes)
+            for meme in selected_memes:
                 meme_file = os.path.join(MEMES_DIR, meme)
+                logger.debug(
+                    f"[meme_manager] 流式模式选中表情图片 (重合度得分): {meme_file}"
+                )
                 final_meme_file = EventHandlers._convert_to_gif(meme_file, sender)
 
                 try:

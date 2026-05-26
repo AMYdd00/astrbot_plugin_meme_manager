@@ -14,7 +14,6 @@ from .config import DEFAULT_CATEGORY_DESCRIPTIONS, MEMES_DATA_PATH, MEMES_DIR
 from .image_host.img_sync import ImageSync
 from .init import init_plugin
 from .utils import (
-    dict_to_string,
     load_json,
 )
 
@@ -160,20 +159,14 @@ class MemeSender(Star):
                         if emo:
                             allowed_categories.add(emo)
 
-            persona_category_mapping = {
-                cat: desc
-                for cat, desc in self.category_mapping.items()
-                if cat in allowed_categories
-            }
-
-            if not persona_category_mapping:
+            if not allowed_categories:
                 persona["prompt"] = original_prompt
                 continue
 
-            persona_category_mapping_string = dict_to_string(persona_category_mapping)
+            allowed_categories_string = ", ".join(sorted(allowed_categories))
             sys_prompt_add = (
                 self.prompt_head
-                + persona_category_mapping_string
+                + allowed_categories_string
                 + self.prompt_tail_1
                 + str(self.max_emotions_per_message)
                 + self.prompt_tail_2
