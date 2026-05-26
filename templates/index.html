@@ -168,6 +168,14 @@
 
         <!-- 顶部 Tab 分类过滤器 -->
         <div id="emoji-tabs" class="emoji-tabs-container">
+          <!-- "All" Tab -->
+          <button class="emoji-tab-btn" 
+                  :class="{ active: activeCategory === 'all' }" 
+                  @click="selectCategory('all')">
+            <span class="tab-name">全部 (All)</span>
+            <span class="tab-badge">{% raw %}{{ allEmojisList.length }}{% endraw %}</span>
+          </button>
+
           <button v-for="(emojis, category) in emojiData" 
                   :key="category" 
                   class="emoji-tab-btn" 
@@ -186,12 +194,12 @@
             <div class="category-title">
               <div class="category-header">
                 <div class="category-title-main">
-                  <div class="category-name">{% raw %}{{ activeCategory }}{% endraw %}</div>
+                  <div class="category-name">{% raw %}{{ activeCategory === 'all' ? '全部 (All)' : activeCategory }}{% endraw %}</div>
                   <span class="category-selection-summary">
-                    {% raw %}{{ selectionEnabled ? '已选 ' + getCategorySelectedCount(activeCategory) + ' / ' + (emojiData[activeCategory]?.length || 0) : '未开启批量选择' }}{% endraw %}
+                    {% raw %}{{ selectionEnabled ? '已选 ' + getCategorySelectedCount(activeCategory) + ' / ' + (activeCategory === 'all' ? allEmojisList.length : (emojiData[activeCategory]?.length || 0)) : '未开启批量选择' }}{% endraw %}
                   </span>
                 </div>
-                <div class="category-actions">
+                <div class="category-actions" v-if="activeCategory !== 'all'">
                   <button class="btn-secondary" @click="openEditCategory(activeCategory)">编辑描述</button>
                   <button class="btn-secondary" 
                           :disabled="!emojiData[activeCategory] || emojiData[activeCategory].length === 0"
@@ -202,27 +210,34 @@
                     <i class="fas fa-trash"></i>
                   </button>
                 </div>
+                <div class="category-actions" v-else>
+                  <button class="btn-secondary" 
+                          :disabled="allEmojisList.length === 0"
+                          @click="toggleCategorySelection(activeCategory)">
+                    {% raw %}{{ isAllSelectedInCategory(activeCategory) ? '取消选择' : '全选' }}{% endraw %}
+                  </button>
+                </div>
               </div>
-              <p class="description">{% raw %}{{ tagDescriptions[activeCategory] || '请添加描述' }}{% endraw %}</p>
+              <p class="description">{% raw %}{{ activeCategory === 'all' ? '展示当前过滤人格下的所有表情包' : (tagDescriptions[activeCategory] || '请添加描述') }}{% endraw %}</p>
             </div>
 
             <!-- 表情包 Grid 网格 -->
             <div class="emoji-grid">
-              <template v-for="emoji in emojiData[activeCategory]" :key="emoji">
+              <template v-for="emoji in (activeCategory === 'all' ? allEmojisList : emojiData[activeCategory])" :key="emoji">
                 <div class="emoji-card" :class="{ active: activeDetailEmoji === emoji }" :data-emoji="emoji">
                   <div class="emoji-item" 
                        :class="{ selected: isEmojiSelected(activeCategory, emoji), 'selection-mode': selectionEnabled }"
                        :style="{ backgroundImage: 'url(/memes/' + encodeURIComponent(activeCategory) + '/' + encodeURIComponent(emoji) + ')' }"
-                       draggable="true" 
+                       :draggable="activeCategory !== 'all'" 
                        @dragstart="onDragStart($event, emoji, activeCategory)"
                        @click="onEmojiClick(activeCategory, emoji)"
-                       @contextmenu.prevent="openContextMenu($event, activeCategory, emoji)">
+                       @contextmenu.prevent="activeCategory !== 'all' && openContextMenu($event, activeCategory, emoji)">
                     
                     <!-- 选中标记按钮 -->
                     <button type="button" class="selection-indicator" aria-label="选择表情包" @click.stop="toggleEmojiSelection(activeCategory, emoji)"></button>
                     
                     <!-- 删除按钮 -->
-                    <button class="delete-btn" @click.stop="deleteEmoji(activeCategory, emoji)">&times;</button>
+                    <button v-if="activeCategory !== 'all'" class="delete-btn" @click.stop="deleteEmoji(activeCategory, emoji)">&times;</button>
                   </div>
 
                   <!-- 表情包卡片底部多标签 -->
@@ -232,12 +247,11 @@
                     </span>
                   </div>
                 </div>
-
-
               </template>
 
               <!-- 上传卡片 -->
-              <div class="emoji-upload" 
+              <div v-if="activeCategory !== 'all'"
+                   class="emoji-upload" 
                    @click="triggerFileInput(activeCategory)"
                    @dragover.prevent
                    @drop.prevent="onUploadDrop($event, activeCategory)"

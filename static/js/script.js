@@ -162,11 +162,11 @@ createApp({
         // Clean up selections of items that no longer exist
         pruneSelections();
 
-        // Default to first category if activeCategory is unset or missing
+        // Default to 'all' if activeCategory is unset or missing
         const categories = Object.keys(emojiRes);
         if (categories.length > 0) {
-          if (!activeCategory.value || !emojiRes[activeCategory.value]) {
-            activeCategory.value = categories[0];
+          if (!activeCategory.value || (!emojiRes[activeCategory.value] && activeCategory.value !== 'all')) {
+            activeCategory.value = 'all';
           }
         } else {
           activeCategory.value = null;
@@ -218,6 +218,16 @@ createApp({
         }
       });
       return map;
+    });
+
+    const allEmojisList = computed(() => {
+      const allSet = new Set();
+      Object.values(emojiData.value).forEach((list) => {
+        if (Array.isArray(list)) {
+          list.forEach((emoji) => allSet.add(emoji));
+        }
+      });
+      return Array.from(allSet).sort();
     });
 
     const getEmojiTags = (emoji) => {
@@ -456,7 +466,7 @@ createApp({
     };
 
     const isAllSelectedInCategory = (category) => {
-      const list = emojiData.value[category] || [];
+      const list = category === 'all' ? allEmojisList.value : (emojiData.value[category] || []);
       if (list.length === 0) return false;
       return list.every((emoji) => isEmojiSelected(category, emoji));
     };
@@ -465,7 +475,7 @@ createApp({
       if (!selectionEnabled.value) {
         selectionEnabled.value = true;
       }
-      const list = emojiData.value[category] || [];
+      const list = category === 'all' ? allEmojisList.value : (emojiData.value[category] || []);
       if (isAllSelectedInCategory(category)) {
         list.forEach((emoji) => {
           selectedEmojis.value.delete(`${category}:${emoji}`);
@@ -485,8 +495,8 @@ createApp({
       if (items.length === 0) return;
 
       const confirmed = await confirm(
-        "批量删除标签 / 文件",
-        `确认删除已选中的 ${items.length} 个表情包分类标签？若其中包含的表情包不属于其他任何分类，对应的磁盘文件将被物理删除。`,
+        "批量删除表情包",
+        `确认删除已选中的 ${items.length} 个表情包？这会移除其分类标签，若该表情包不属于其他任何分类，它将被物理删除。`,
         "确认批量删除",
         "danger"
       );
@@ -495,8 +505,13 @@ createApp({
       // Group by category to hit Quart batch delete endpoint
       const grouped = {};
       items.forEach((item) => {
-        if (!grouped[item.category]) grouped[item.category] = [];
-        grouped[item.category].push(item.emoji);
+        const cats = item.category === 'all' ? getEmojiTags(item.emoji) : [item.category];
+        cats.forEach((cat) => {
+          if (!grouped[cat]) grouped[cat] = [];
+          if (!grouped[cat].includes(item.emoji)) {
+            grouped[cat].push(item.emoji);
+          }
+        });
       });
 
       let successCount = 0;
@@ -1158,6 +1173,7 @@ createApp({
       tagDescriptions,
       systemPersonas,
       activeCategory,
+      allEmojisList,
       activeDetailEmoji,
       personaFilter,
       toasts,
