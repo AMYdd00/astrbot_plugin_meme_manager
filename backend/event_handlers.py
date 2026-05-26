@@ -574,31 +574,9 @@ class EventHandlers:
         if not last_image_url:
             return "没有在聊天记录中找到可以偷的表情包/图片哦。"
 
-        # 2. 检查分类是否合法
-        if not categories:
+        # 2. 检查分类是否合法（如果未启用多模态判定，且 categories 为空，则报错）
+        if not getattr(sender, "multimodal_llm_enabled", False) and not categories:
             return "请输入至少一个有效的标签/分类名称。"
-
-        valid_categories = set(sender.category_manager.get_descriptions().keys())
-        resolved_categories = []
-        invalid_categories = []
-
-        for category in categories:
-            category = category.strip()
-            if not category:
-                continue
-            if category in valid_categories:
-                resolved_categories.append(category)
-            else:
-                # 尝试通过描述匹配分类
-                for cat, desc in sender.category_mapping.items():
-                    if category == desc:
-                        resolved_categories.append(cat)
-                        break
-                else:
-                    invalid_categories.append(category)
-
-        if not resolved_categories:
-            return f"无效的表情包分类 {invalid_categories}，当前可用的分类有：{', '.join(valid_categories)}"
 
         # 3. 获取当前会话的人格 ID (persona_id)
         persona_id = ""
@@ -657,9 +635,134 @@ class EventHandlers:
             if not content:
                 return "下载图片失败，文件内容为空。"
 
+            # 检测图片类型
+            try:
+                with PILImage.open(io.BytesIO(content)) as img_obj:
+                    file_type = img_obj.format.lower()
+            except Exception as e:
+                logger.error(f"图片格式检测失败: {str(e)}")
+                file_type = "unknown"
+
             # 5. 保存前哈希计算与判重
             raw_hash = hashlib.sha256(content).hexdigest()
 
+            # 6. 多模态 LLM 分类（如果启用）
+            resolved_categories = []
+            invalid_categories = []
+
+            if getattr(sender, "multimodal_llm_enabled", False):
+                provider_id = getattr(sender, "multimodal_llm_provider_id", "")
+                if not provider_id:
+                    provider_id = await sender.context.get_current_chat_provider_id(
+                        umo=event.unified_msg_origin
+                    )
+                if provider_id:
+                    import base64
+
+                    mime_type = "image/jpeg"
+                    if file_type == "png":
+                        mime_type = "image/png"
+                    elif file_type == "gif":
+                        mime_type = "image/gif"
+                    elif file_type == "webp":
+                        mime_type = "image/webp"
+
+                    b64_data = base64.b64encode(content).decode("utf-8")
+                    image_data_uri = f"data:{mime_type};base64,{b64_data}"
+
+                    valid_descriptions = sender.category_manager.get_descriptions()
+                    prompt = (
+                        "你是一个表情包分类器。请分析上传的图片，并从以下给定的表情包分类列表中，挑选出最符合这幅图片的分类（可以是一个或多个）。\n"
+                        "注意：你只能从给定的分类列表中选择，不要自己创造新的分类。\n\n"
+                        "可选的分类列表：\n"
+                    )
+                    for cat, desc in valid_descriptions.items():
+                        prompt += f"- {cat}: {desc}\n"
+                    prompt += (
+                        "\n请仅以 JSON 数组格式输出选中的分类，例如：\n"
+                        '["分类1", "分类2"]\n'
+                        "不要返回任何其他内容（如 markdown 代码块标记、解释等），只返回 JSON 数组。"
+                    )
+
+                    try:
+                        logger.info(f"正在调用多模态模型 {provider_id} 判定表情分类...")
+                        llm_resp = await sender.context.llm_generate(
+                            chat_provider_id=provider_id,
+                            prompt=prompt,
+                            image_urls=[image_data_uri],
+                        )
+                        if llm_resp and llm_resp.completion_text:
+                            raw_text = llm_resp.completion_text.strip()
+                            logger.debug(f"多模态模型返回内容: {raw_text}")
+                            data = None
+                            try:
+                                data = json.loads(raw_text)
+                            except Exception:
+                                match = re.search(r"\[\s*\"[\s\S]*\"\s*\]", raw_text)
+                                if match:
+                                    try:
+                                        data = json.loads(match.group(0))
+                                    except Exception:
+                                        pass
+
+                            parsed_categories = []
+                            if isinstance(data, list):
+                                parsed_categories = [str(x) for x in data]
+                            else:
+                                for cat in valid_descriptions.keys():
+                                    if cat in raw_text:
+                                        parsed_categories.append(cat)
+
+                            if parsed_categories:
+                                logger.info(
+                                    f"多模态模型判定表情分类为: {parsed_categories}"
+                                )
+                                for cat in parsed_categories:
+                                    cat = cat.strip()
+                                    if cat in valid_descriptions:
+                                        resolved_categories.append(cat)
+                                    else:
+                                        for (
+                                            real_cat,
+                                            desc,
+                                        ) in sender.category_mapping.items():
+                                            if cat == desc:
+                                                resolved_categories.append(real_cat)
+                                                break
+                                        else:
+                                            invalid_categories.append(cat)
+                    except Exception as e:
+                        logger.error(f"多模态模型分析图片分类失败: {e}", exc_info=True)
+
+            # 如果未启用或多模态分类失败，且提供了类别，则使用原逻辑解析类别
+            if not resolved_categories and categories:
+                valid_categories = set(
+                    sender.category_manager.get_descriptions().keys()
+                )
+                for category in categories:
+                    category = category.strip()
+                    if not category:
+                        continue
+                    if category in valid_categories:
+                        resolved_categories.append(category)
+                    else:
+                        for cat, desc in sender.category_mapping.items():
+                            if category == desc:
+                                resolved_categories.append(cat)
+                                break
+                        else:
+                            invalid_categories.append(category)
+
+            if not resolved_categories:
+                if getattr(sender, "multimodal_llm_enabled", False):
+                    return "多模态模型判定表情分类失败，且未提供有效的分类名称。"
+                else:
+                    valid_categories = set(
+                        sender.category_manager.get_descriptions().keys()
+                    )
+                    return f"无效的表情包分类 {invalid_categories}，当前可用的分类有：{', '.join(valid_categories)}"
+
+            # 7. 数据库排重及记录更新
             from .database import get_db_conn
 
             conn = get_db_conn()
@@ -679,11 +782,9 @@ class EventHandlers:
                     set(row["personas"].split(",")) if row["personas"] else set()
                 )
 
-                # 合并分类
                 for cat in resolved_categories:
                     existing_emotions.add(cat)
 
-                # 合并行格限制
                 if persona_id != "*":
                     existing_personas.add(persona_id)
                 else:
@@ -711,14 +812,7 @@ class EventHandlers:
 
             conn.close()
 
-            # 不存在则进行文件检测与保存注册
-            try:
-                with PILImage.open(io.BytesIO(content)) as img_obj:
-                    file_type = img_obj.format.lower()
-            except Exception as e:
-                logger.error(f"图片格式检测失败: {str(e)}")
-                file_type = "unknown"
-
+            # 不存在则保存并注册
             ext_mapping = {
                 "jpeg": ".jpg",
                 "png": ".png",

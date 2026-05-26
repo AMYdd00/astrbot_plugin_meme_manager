@@ -103,6 +103,10 @@ class MemeSender(Star):
         )
         self.emotion_llm_enabled = self.config.get("emotion_llm_enabled", False)
         self.emotion_llm_provider_id = self.config.get("emotion_llm_provider_id", "")
+        self.multimodal_llm_enabled = self.config.get("multimodal_llm_enabled", False)
+        self.multimodal_llm_provider_id = self.config.get(
+            "multimodal_llm_provider_id", ""
+        )
 
         self.enable_mixed_message = self.config.get("enable_mixed_message", True)
         self.mixed_message_probability = self.config.get(
@@ -345,12 +349,20 @@ class MemeSender(Star):
         await EventHandlers.after_message_sent(self, event)
 
     @llm_tool(name="steal_meme")
-    async def steal_meme(self, event: AstrMessageEvent, categories: list[str]):
+    async def steal_meme(
+        self,
+        event: AstrMessageEvent,
+        categories: list[str] = None,
+        category: str = None,
+    ):
         """保存并收录上一条聊天记录中发送的表情包到当前人格的表情包库中。
 
         Args:
             categories(list): 表情包所属的类别列表，如 ["happy", "funny"] 等
+            category(string): 表情包所属的类别，如 happy, sad, angry 等（单标签兼容）
         """
+        if not categories and category:
+            categories = [category]
         return await EventHandlers.steal_meme(self, event, categories)
 
     async def terminate(self):

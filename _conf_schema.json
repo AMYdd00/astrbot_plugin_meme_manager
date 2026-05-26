@@ -109,6 +109,19 @@
     "hint": "留空则使用当前对话的模型",
     "_special": "select_provider"
   },
+  "multimodal_llm_enabled": {
+    "description": "启用多模态模型自动分类表情包",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，偷取表情包时将自动调用指定的多模态模型对图片进行视觉分析并分类"
+  },
+  "multimodal_llm_provider_id": {
+    "description": "多模态模型Provider ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空则使用当前对话的模型（当前对话模型需支持图片理解）",
+    "_special": "select_provider"
+  },
   "convert_static_to_gif": {
     "description": "静态图转GIF发送",
     "type": "bool",
