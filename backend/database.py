@@ -28,10 +28,40 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         filename TEXT UNIQUE,
         emotions TEXT,
-        personas TEXT
+        personas TEXT,
+        original_hash TEXT
     )
     """)
     conn.commit()
+
+    # 检查 original_hash 列是否存在
+    cursor.execute("PRAGMA table_info(memes)")
+    columns = [row["name"] for row in cursor.fetchall()]
+    if "original_hash" not in columns:
+        logger.info("数据库表中缺少 original_hash 字段，正在进行升级...")
+        cursor.execute("ALTER TABLE memes ADD COLUMN original_hash TEXT")
+        conn.commit()
+
+    # 填充现有的 original_hash (如果为 NULL)
+    cursor.execute("SELECT id, filename FROM memes WHERE original_hash IS NULL")
+    rows = cursor.fetchall()
+    if rows:
+        logger.info(f"正在为 {len(rows)} 个现有表情包填充哈希值...")
+        for row in rows:
+            row_id = row["id"]
+            filename = row["filename"]
+            file_path = Path(MEMES_DIR) / filename
+            if file_path.exists() and file_path.is_file():
+                try:
+                    file_hash = _calculate_file_hash(file_path)
+                    cursor.execute(
+                        "UPDATE memes SET original_hash = ? WHERE id = ?",
+                        (file_hash, row_id),
+                    )
+                except Exception as e:
+                    logger.warning(f"为现有表情包 {filename} 计算哈希失败: {e}")
+        conn.commit()
+
     conn.close()
 
 

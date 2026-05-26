@@ -560,11 +560,11 @@ class EventHandlers:
             yield event.plain_result(f"保存失败了：{str(e)}")
 
     @staticmethod
-    async def steal_meme(sender, event: AstrMessageEvent, category: str):
+    async def steal_meme(sender, event: AstrMessageEvent, categories: list[str]):
         """保存并收录上一条聊天记录中发送的表情包到当前人格的表情包库中。
 
         Args:
-            category(string): 对应的表情包类别/情绪分类名称（如 happy, sad, angry 等）
+            categories(list): 对应的表情包类别/情绪分类名称列表（如 ["happy", "sad"] 等）
         """
         # 1. 获取最近的图片记录
         if not hasattr(sender, "last_images") or not sender.last_images:
@@ -575,15 +575,30 @@ class EventHandlers:
             return "没有在聊天记录中找到可以偷的表情包/图片哦。"
 
         # 2. 检查分类是否合法
+        if not categories:
+            return "请输入至少一个有效的标签/分类名称。"
+
         valid_categories = set(sender.category_manager.get_descriptions().keys())
-        if category not in valid_categories:
-            # 尝试通过描述匹配分类
-            for cat, desc in sender.category_mapping.items():
-                if category == desc:
-                    category = cat
-                    break
+        resolved_categories = []
+        invalid_categories = []
+
+        for category in categories:
+            category = category.strip()
+            if not category:
+                continue
+            if category in valid_categories:
+                resolved_categories.append(category)
             else:
-                return f"无效的表情包分类「{category}」，当前可用的分类有：{', '.join(valid_categories)}"
+                # 尝试通过描述匹配分类
+                for cat, desc in sender.category_mapping.items():
+                    if category == desc:
+                        resolved_categories.append(cat)
+                        break
+                else:
+                    invalid_categories.append(category)
+
+        if not resolved_categories:
+            return f"无效的表情包分类 {invalid_categories}，当前可用的分类有：{', '.join(valid_categories)}"
 
         # 3. 获取当前会话的人格 ID (persona_id)
         persona_id = ""
@@ -614,6 +629,7 @@ class EventHandlers:
                 persona_id = "default"
 
         # 4. 下载图片
+        import hashlib
         import io
         import ssl
 
@@ -641,6 +657,61 @@ class EventHandlers:
             if not content:
                 return "下载图片失败，文件内容为空。"
 
+            # 5. 保存前哈希计算与判重
+            raw_hash = hashlib.sha256(content).hexdigest()
+
+            from .database import get_db_conn
+
+            conn = get_db_conn()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT filename, emotions, personas FROM memes WHERE original_hash = ?",
+                (raw_hash,),
+            )
+            row = cursor.fetchone()
+
+            if row:
+                existing_filename = row["filename"]
+                existing_emotions = (
+                    set(row["emotions"].split(",")) if row["emotions"] else set()
+                )
+                existing_personas = (
+                    set(row["personas"].split(",")) if row["personas"] else set()
+                )
+
+                # 合并分类
+                for cat in resolved_categories:
+                    existing_emotions.add(cat)
+
+                # 合并行格限制
+                if persona_id != "*":
+                    existing_personas.add(persona_id)
+                else:
+                    existing_personas = {"*"}
+
+                cursor.execute(
+                    "UPDATE memes SET emotions = ?, personas = ? WHERE filename = ?",
+                    (
+                        ",".join(existing_emotions),
+                        ",".join(existing_personas),
+                        existing_filename,
+                    ),
+                )
+                conn.commit()
+                conn.close()
+
+                await sender.reload_emotions()
+
+                invalid_tip = (
+                    f"（忽略了无效的分类 {invalid_categories}）"
+                    if invalid_categories
+                    else ""
+                )
+                return f"此表情包已经存在（文件名：{existing_filename}），已为您合并/追加分类【{', '.join(resolved_categories)}】并对当前人格生效。{invalid_tip}"
+
+            conn.close()
+
+            # 不存在则进行文件检测与保存注册
             try:
                 with PILImage.open(io.BytesIO(content)) as img_obj:
                     file_type = img_obj.format.lower()
@@ -662,9 +733,10 @@ class EventHandlers:
             res = save_and_register_meme(
                 image_bytes=content,
                 filename=filename,
-                category=category,
+                category=resolved_categories,
                 personas=persona_id,
                 config=sender.config,
+                original_hash=raw_hash,
             )
 
             sync_tip = ""
@@ -673,7 +745,12 @@ class EventHandlers:
 
             await sender.reload_emotions()
 
-            return f"成功收录表情包「{res['filename']}」到分类【{category}】中，且仅供人格【{persona_id}】使用。{sync_tip}"
+            invalid_tip = (
+                f"（忽略了无效的分类 {invalid_categories}）"
+                if invalid_categories
+                else ""
+            )
+            return f"成功收录表情包「{res['filename']}」到分类【{', '.join(resolved_categories)}】中，且仅供人格【{persona_id}】使用。{invalid_tip}{sync_tip}"
 
         except Exception as e:
             logger.error(f"偷表情包失败: {e}", exc_info=True)

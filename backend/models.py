@@ -31,16 +31,15 @@ def _calculate_file_hash(content: bytes) -> str:
 
 
 def _find_duplicate_image(content_hash: str) -> str | None:
-    # 扫描 memes 目录下的所有文件并计算 hash
-    if not os.path.exists(MEMES_DIR):
-        return None
-    for item in Path(MEMES_DIR).iterdir():
-        if item.is_file() and _is_supported_image(item.name):
-            try:
-                if _calculate_file_hash(item.read_bytes()) == content_hash:
-                    return item.name
-            except OSError:
-                continue
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT filename FROM memes WHERE original_hash = ?", (content_hash,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return row["filename"]
     return None
 
 
@@ -103,9 +102,10 @@ def get_emoji_by_category(category):
 def save_and_register_meme(
     image_bytes: bytes,
     filename: str,
-    category: str,
+    category: str | list[str],
     personas: str = "*",
     config: dict = None,
+    original_hash: str = None,
 ) -> dict:
     """
     保存并注册表情包到数据库和磁盘（由 chat 上传或 steal tool 调用）
@@ -160,11 +160,14 @@ def save_and_register_meme(
     )
     row = cursor.fetchone()
 
+    new_categories = {category} if isinstance(category, str) else set(category)
+
     if row:
         existing_emotions = (
             set(row["emotions"].split(",")) if row["emotions"] else set()
         )
-        existing_emotions.add(category)
+        for cat in new_categories:
+            existing_emotions.add(cat)
 
         existing_personas = (
             set(row["personas"].split(",")) if row["personas"] else set()
@@ -175,14 +178,25 @@ def save_and_register_meme(
         else:
             existing_personas = {"*"}
 
-        cursor.execute(
-            "UPDATE memes SET emotions = ?, personas = ? WHERE filename = ?",
-            (",".join(existing_emotions), ",".join(existing_personas), safe_name),
-        )
+        if original_hash:
+            cursor.execute(
+                "UPDATE memes SET emotions = ?, personas = ?, original_hash = ? WHERE filename = ?",
+                (
+                    ",".join(existing_emotions),
+                    ",".join(existing_personas),
+                    original_hash,
+                    safe_name,
+                ),
+            )
+        else:
+            cursor.execute(
+                "UPDATE memes SET emotions = ?, personas = ? WHERE filename = ?",
+                (",".join(existing_emotions), ",".join(existing_personas), safe_name),
+            )
     else:
         cursor.execute(
-            "INSERT INTO memes (filename, emotions, personas) VALUES (?, ?, ?)",
-            (safe_name, category, personas),
+            "INSERT INTO memes (filename, emotions, personas, original_hash) VALUES (?, ?, ?, ?)",
+            (safe_name, ",".join(new_categories), personas, original_hash),
         )
     conn.commit()
     conn.close()
@@ -230,7 +244,9 @@ def add_emoji_to_category(category, image_file, personas="*"):
         conn.close()
         raise DuplicateEmojiError(duplicate_name)
 
-    result = save_and_register_meme(content, filename, category, personas)
+    result = save_and_register_meme(
+        content, filename, category, personas, original_hash=content_hash
+    )
     return result
 
 

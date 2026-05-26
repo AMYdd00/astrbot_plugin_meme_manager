@@ -345,13 +345,13 @@ class MemeSender(Star):
         await EventHandlers.after_message_sent(self, event)
 
     @llm_tool(name="steal_meme")
-    async def steal_meme(self, event: AstrMessageEvent, category: str):
+    async def steal_meme(self, event: AstrMessageEvent, categories: list[str]):
         """保存并收录上一条聊天记录中发送的表情包到当前人格的表情包库中。
 
         Args:
-            category(string): 表情包所属的类别，如 happy, sad, angry 等
+            categories(list): 表情包所属的类别列表，如 ["happy", "funny"] 等
         """
-        return await EventHandlers.steal_meme(self, event, category)
+        return await EventHandlers.steal_meme(self, event, categories)
 
     async def terminate(self):
         """清理资源"""
