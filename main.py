@@ -1,4 +1,3 @@
-
 from astrbot.api import logger
 from astrbot.api.all import *  # noqa: F403
 from astrbot.api.event import AstrMessageEvent, filter

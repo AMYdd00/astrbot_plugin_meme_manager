@@ -70,13 +70,13 @@ class EventHandlers:
     async def resp(sender, event: AstrMessageEvent, response: LLMResponse):
         """处理 LLM 响应，识别表情"""
         if not response or not response.completion_text:
-            logger.info("[meme_manager] LLM 响应为空，跳过表情识别。")
+            logger.debug("[meme_manager] LLM 响应为空，跳过表情识别。")
             return
 
         text = response.completion_text
         sender.found_emotions = []  # 重置表情列表
         valid_emoticons = set(sender.category_mapping.keys())  # 预加载合法表情集合
-        logger.info(
+        logger.debug(
             f"[meme_manager] 收到 LLM 响应，开始表情识别。文本: {text[:100]}...，启用情感模型: {sender.emotion_llm_enabled}"
         )
 
@@ -103,7 +103,7 @@ class EventHandlers:
             if emotion:
                 sender.found_emotions.append(emotion)
 
-        logger.info(
+        logger.debug(
             f"[meme_manager] 第一阶段严格匹配符号 && 包裹的表情: {strict_emotions}"
         )
 
@@ -157,7 +157,7 @@ class EventHandlers:
                 clean_text = clean_text.replace(original, "", 1)
                 sender.found_emotions.append(emotion)
 
-            logger.info(
+            logger.debug(
                 f"[meme_manager] 第二阶段替代标记 [] / () 包裹的表情: {[b[1] for b in bracket_replacements] + [p[1] for p in paren_replacements]}"
             )
 
@@ -196,7 +196,7 @@ class EventHandlers:
                             sender.found_emotions.append(emotion)
                             repeated_emotions.append(emotion)
 
-        logger.info(
+        logger.debug(
             f"[meme_manager] 第三阶段重复检测阶段找到的表情: {repeated_emotions}"
         )
 
@@ -223,7 +223,7 @@ class EventHandlers:
                             clean_text[:position] + clean_text[position + len(word) :]
                         )
 
-        logger.info(f"[meme_manager] 第四阶段松散匹配阶段找到的表情: {loose_emotions}")
+        logger.debug(f"[meme_manager] 第四阶段松散匹配阶段找到的表情: {loose_emotions}")
 
         if sender.emotion_llm_enabled:
             try:
@@ -242,7 +242,7 @@ class EventHandlers:
                         f"可用标签: {', '.join(valid_list)}\n"
                         f"文本: {clean_text}"
                     )
-                    logger.info(
+                    logger.debug(
                         f"[meme_manager] 情感模型准备调用。模型 ID: {provider_id}"
                     )
                     llm_resp = await sender.context.llm_generate(
@@ -250,7 +250,7 @@ class EventHandlers:
                     )
                     if llm_resp and llm_resp.completion_text:
                         raw_text = llm_resp.completion_text.strip()
-                        logger.info(f"[meme_manager] 情感模型返回原始文本: {raw_text}")
+                        logger.debug(f"[meme_manager] 情感模型返回原始文本: {raw_text}")
                         data = None
                         try:
                             data = json.loads(raw_text)
@@ -263,7 +263,7 @@ class EventHandlers:
                                     data = None
                         if isinstance(data, dict):
                             emotions = data.get("emotions")
-                            logger.info(
+                            logger.debug(
                                 f"[meme_manager] 情感模型解析得到的表情: {emotions}"
                             )
                             if isinstance(emotions, list):
@@ -295,7 +295,7 @@ class EventHandlers:
                 break
 
         sender.found_emotions = filtered_emotions
-        logger.info(
+        logger.debug(
             f"[meme_manager] 去重后的最终表情列表 (去重及限额后): {sender.found_emotions}"
         )
 
@@ -305,18 +305,18 @@ class EventHandlers:
     @staticmethod
     async def on_decorating_result(sender, event: AstrMessageEvent):
         """在消息发送前清理文本中的表情标签，并根据人格匹配合适表情"""
-        logger.info(
+        logger.debug(
             f"[meme_manager] 进入消息装饰阶段。当前待发送表情列表: {sender.found_emotions}"
         )
 
         result = event.get_result()
         if not result:
-            logger.info("[meme_manager] event.get_result() 为空，结束处理。")
+            logger.debug("[meme_manager] event.get_result() 为空，结束处理。")
             return
 
         if result.result_content_type == ResultContentType.STREAMING_FINISH:
             if sender.streaming_compatibility:
-                logger.info(
+                logger.debug(
                     "[meme_manager] 检测到流式传输完成事件，调用 _send_memes_streaming"
                 )
                 await EventHandlers._send_memes_streaming(sender, event)
@@ -365,14 +365,14 @@ class EventHandlers:
             if sender.found_emotions:
                 random_value = random.randint(1, 100)
                 threshold = sender.emotions_probability
-                logger.info(
+                logger.debug(
                     f"[meme_manager] 触发表情概率判断。设定概率: {threshold}%, 本次随机数: {random_value}"
                 )
 
                 if random_value <= threshold:
                     # 获取当前人格 ID
                     persona_id = await EventHandlers._get_persona_id(sender, event)
-                    logger.info(f"[meme_manager] 当前会话人格 ID: '{persona_id}'")
+                    logger.debug(f"[meme_manager] 当前会话人格 ID: '{persona_id}'")
                     emotion_images = []
                     temp_files = []
 
@@ -385,7 +385,7 @@ class EventHandlers:
                         if not emotion:
                             continue
 
-                        logger.info(
+                        logger.debug(
                             f"[meme_manager] 正在查找表情 '{emotion}' 对应的图片..."
                         )
                         # 优先查找当前人格专属表情包
@@ -396,7 +396,7 @@ class EventHandlers:
                         rows = cursor.fetchall()
 
                         if not rows:
-                            logger.info(
+                            logger.debug(
                                 "[meme_manager] 未找到专属表情，降级查找全局表情包..."
                             )
                             # 降级查找全局表情包
@@ -407,7 +407,7 @@ class EventHandlers:
                             rows = cursor.fetchall()
 
                         memes = [row["filename"] for row in rows]
-                        logger.info(
+                        logger.debug(
                             f"[meme_manager] 数据库中匹配表情 '{emotion}' 的文件名列表: {memes}"
                         )
 
@@ -459,7 +459,7 @@ class EventHandlers:
                                 <= sender.mixed_message_probability
                             )
 
-                        logger.info(
+                        logger.debug(
                             f"[meme_manager] 成功加载 {len(emotion_images)} 张表情图片。是否混合发送: {use_mixed_message}"
                         )
 
@@ -474,9 +474,9 @@ class EventHandlers:
                                 "meme_manager_pending_images", emotion_images
                             )
                     else:
-                        logger.info("[meme_manager] 未匹配到任何可发送的表情图片")
+                        logger.debug("[meme_manager] 未匹配到任何可发送的表情图片")
                 else:
-                    logger.info(
+                    logger.debug(
                         "[meme_manager] 随机数大于设定发送概率，跳过发送表情包。"
                     )
 
@@ -501,7 +501,7 @@ class EventHandlers:
                     if final_components:
                         result.chain = final_components
 
-            logger.info("[meme_manager] on_decorating_result 处理完成。")
+            logger.debug("[meme_manager] on_decorating_result 处理完成。")
 
         except Exception as e:
             logger.error(f"处理消息装饰失败: {str(e)}")
@@ -511,7 +511,7 @@ class EventHandlers:
     async def after_message_sent(sender, event: AstrMessageEvent):
         """消息发送后处理。用于发送未混合的表情图片。"""
         pending_images = event.get_extra("meme_manager_pending_images")
-        logger.info(
+        logger.debug(
             f"[meme_manager] 进入 after_message_sent 发送后处理。待补发表情图片数: {len(pending_images) if pending_images else 0}"
         )
 
@@ -543,7 +543,7 @@ class EventHandlers:
                     try:
                         if os.path.exists(temp_file):
                             os.remove(temp_file)
-                            logger.info(
+                            logger.debug(
                                 f"[meme_manager] 已成功清理临时文件: {temp_file}"
                             )
                     except Exception as e:
