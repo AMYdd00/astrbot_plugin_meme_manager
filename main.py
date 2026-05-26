@@ -25,7 +25,9 @@ from .utils import (
     "meme_manager", "anka", "anka - 表情包管理器 - 支持表情包发送及表情包上传", "3.20"
 )
 class MemeSender(Star):
-    def __init__(self, context: Context, config: dict = None):
+    context: Context
+
+    def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
         self.config = config or {}
 
@@ -205,7 +207,7 @@ class MemeSender(Star):
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @meme_manager.command("添加表情")
-    async def upload_meme(self, event: AstrMessageEvent, category: str = None):
+    async def upload_meme(self, event: AstrMessageEvent, category: str | None = None):
         """上传表情包到指定类别"""
         async for res in CommandsHandler.upload_meme(self, event, category):
             yield res
@@ -213,7 +215,7 @@ class MemeSender(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @meme_manager.command("恢复默认表情包")
     async def restore_default_memes_command(
-        self, event: AstrMessageEvent, category: str = None
+        self, event: AstrMessageEvent, category: str | None = None
     ):
         """恢复内置默认表情包，可指定类别或恢复全部。"""
         async for res in CommandsHandler.restore_default_memes_command(
@@ -224,7 +226,7 @@ class MemeSender(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @meme_manager.command("清空指定类型")
     async def clear_category_command(
-        self, event: AstrMessageEvent, category: str = None
+        self, event: AstrMessageEvent, category: str | None = None
     ):
         """清空指定类型下的所有表情包，但保留类型本身。"""
         async for res in CommandsHandler.clear_category_command(self, event, category):
@@ -240,14 +242,16 @@ class MemeSender(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @meme_manager.command("删除类型本身")
     async def delete_category_command(
-        self, event: AstrMessageEvent, category: str = None
+        self, event: AstrMessageEvent, category: str | None = None
     ):
         """删除指定类型本身，同时移除其描述配置和本地文件夹。"""
         async for res in CommandsHandler.delete_category_command(self, event, category):
             yield res
 
     @meme_manager.command("同步状态")
-    async def check_sync_status(self, event: AstrMessageEvent, detail: str = None):
+    async def check_sync_status(
+        self, event: AstrMessageEvent, detail: str | None = None
+    ):
         """检查表情包与图床的同步状态"""
         async for res in CommandsHandler.check_sync_status(self, event, detail):
             yield res
@@ -323,8 +327,8 @@ class MemeSender(Star):
     async def steal_meme(
         self,
         event: AstrMessageEvent,
-        categories: list[str] = None,
-        category: str = None,
+        categories: list[str] | None = None,
+        category: str | None = None,
     ):
         """保存并收录上一条聊天记录中发送的表情包到当前人格的表情包库中。
 

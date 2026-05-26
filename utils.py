@@ -172,11 +172,12 @@ def copy_default_memes_if_needed() -> bool:
     return False
 
 
-def save_json(data: dict[str, Any], filepath: str) -> bool:
+def save_json(data: dict[str, Any], filepath: str | Path) -> bool:
     """保存 JSON 数据到文件"""
     try:
-        ensure_dir_exists(os.path.dirname(filepath))
-        with open(filepath, "w", encoding="utf-8") as f:
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
@@ -184,7 +185,7 @@ def save_json(data: dict[str, Any], filepath: str) -> bool:
         return False
 
 
-def load_json(filepath: str, default: dict = None) -> dict:
+def load_json(filepath: str | Path, default: dict | None = None) -> dict:
     """从文件加载 JSON 数据"""
     try:
         with open(filepath, encoding="utf-8") as f:
