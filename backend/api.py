@@ -77,7 +77,7 @@ async def get_all_emojis():
     plugin_config = current_app.config.get("PLUGIN_CONFIG", {})
     category_manager = plugin_config.get("category_manager")
     if category_manager:
-        for cat in category_manager.get_descriptions():
+        for cat in category_manager.get_categories():
             if cat not in emoji_data:
                 emoji_data[cat] = []
 
@@ -393,15 +393,15 @@ async def clear_all_emoji():
 
 @api.route("/emotions", methods=["GET"])
 async def get_emotions():
-    """获取表情包类别描述"""
+    """获取表情包类别并返回空描述字典（保持前端兼容性）"""
     try:
         plugin_config = current_app.config.get("PLUGIN_CONFIG", {})
         category_manager = plugin_config.get("category_manager")
-        descriptions = category_manager.get_descriptions()
-        return jsonify(descriptions)
+        categories = category_manager.get_categories()
+        return jsonify(dict.fromkeys(categories, ""))
     except Exception as e:
-        current_app.logger.error(f"获取标签描述失败: {e}")
-        return jsonify({"error": "获取标签描述失败"}), 500
+        current_app.logger.error(f"获取标签失败: {e}")
+        return jsonify({"error": "获取标签失败"}), 500
 
 
 @api.route("/category/delete", methods=["POST"])
@@ -479,33 +479,6 @@ async def sync_config():
         return jsonify({"message": f"配置同步失败: {str(e)}"}), 500
 
 
-@api.route("/category/update_description", methods=["POST"])
-async def update_category_description():
-    """更新类别的描述"""
-    try:
-        data = await request.get_json()
-        category = data.get("tag")
-        description = data.get("description")
-        if not category or not description:
-            return jsonify({"message": "Category and description are required"}), 400
-
-        plugin_config = current_app.config.get("PLUGIN_CONFIG", {})
-        category_manager = plugin_config.get("category_manager")
-
-        if not category_manager:
-            return jsonify({"message": "Category manager not found"}), 404
-
-        if category_manager.update_description(category, description):
-            # 返回更新后的类别和描述
-            return jsonify({"category": category, "description": description}), 200
-        else:
-            return jsonify({"message": "Failed to update category description"}), 500
-    except Exception as e:
-        return jsonify(
-            {"message": f"Failed to update category description: {str(e)}"}
-        ), 500
-
-
 @api.route("/category/restore", methods=["POST"])
 async def restore_category():
     """恢复或创建新类别"""
@@ -513,7 +486,6 @@ async def restore_category():
         data = await request.get_json()
 
         category = data.get("category")
-        description = data.get("description", "请添加描述")
 
         if not category:
             return jsonify({"message": "Category is required"}), 400
@@ -528,11 +500,9 @@ async def restore_category():
         category_path = os.path.join(MEMES_DIR, category)
         os.makedirs(category_path, exist_ok=True)
 
-        # 更新类别描述
-        if category_manager.update_description(category, description):
-            return jsonify(
-                {"message": "Category created successfully", "description": description}
-            ), 200
+        # 添加分类
+        if category_manager.add_category(category):
+            return jsonify({"message": "Category created successfully"}), 200
         else:
             return jsonify({"message": "Failed to create category"}), 500
 

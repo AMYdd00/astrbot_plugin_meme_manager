@@ -138,7 +138,9 @@ class EventHandlers:
 
         text = response.completion_text
         sender.found_emotions = []  # 重置表情列表
-        valid_emoticons = set(sender.category_mapping.keys())  # 预加载合法表情集合
+        valid_emoticons = set(
+            sender.category_manager.get_categories()
+        )  # 预加载合法表情集合
         logger.debug(
             f"[meme_manager] 收到 LLM 响应，开始表情识别。文本: {text[:100]}...，启用情感模型: {sender.emotion_llm_enabled}"
         )
@@ -728,7 +730,7 @@ class EventHandlers:
             # 6. 标签/分类解析与判定
             resolved_categories = []
             invalid_categories = []
-            valid_categories = set(sender.category_manager.get_descriptions().keys())
+            valid_categories = set(sender.category_manager.get_categories())
 
             # A. 首先尝试解析显式传入的 categories 参数
             if categories:
@@ -739,21 +741,12 @@ class EventHandlers:
                     if category in valid_categories:
                         resolved_categories.append(category)
                     else:
-                        # 检查是否匹配描述
-                        matched_cat = None
-                        for cat, desc in sender.category_mapping.items():
-                            if category == desc:
-                                matched_cat = cat
-                                break
-                        if matched_cat:
-                            resolved_categories.append(matched_cat)
+                        # 允许作为自定义的新标签
+                        clean_cat = category.lower()
+                        if len(clean_cat) <= 20:
+                            resolved_categories.append(clean_cat)
                         else:
-                            # 允许作为自定义的新标签
-                            clean_cat = category.lower()
-                            if len(clean_cat) <= 20:
-                                resolved_categories.append(clean_cat)
-                            else:
-                                invalid_categories.append(category)
+                            invalid_categories.append(category)
 
             # B. 如果解析后没有得到任何分类，且启用了多模态，则调用多模态模型自动分类
             multimodal_called = False
@@ -781,21 +774,24 @@ class EventHandlers:
                     b64_data = base64.b64encode(content).decode("utf-8")
                     image_data_uri = f"data:{mime_type};base64,{b64_data}"
 
-                    valid_descriptions = sender.category_manager.get_descriptions()
+                    existing_tags = sender.category_manager.get_categories()
                     prompt = (
-                        "请对这张图片进行视觉分析，并生成 1-2 个最契合此图的情绪或场景标签（例如: happy, sad, angry, cat, sleep, work 等）。\n"
+                        "请对这张图片进行视觉分析，并生成 1-2 个最契合此图的表情包分类标签。\n"
                         "【已有标签列表】：\n"
                     )
-                    for cat, desc in valid_descriptions.items():
-                        prompt += f"- {cat}"
-                        if desc and desc != "请添加描述":
-                            prompt += f": {desc}"
-                        prompt += "\n"
+                    for cat in sorted(existing_tags):
+                        prompt += f"- {cat}\n"
                     prompt += (
-                        "\n【打标签规则】：\n"
-                        "1. 优先从上述已有的标签列表中选择最契合的标签。\n"
-                        "2. 如果图片内容完全不符合已有标签，允许你自行拟定 1-2 个最契合的简短英文/中文情绪或场景词汇作为新标签（英文优先，如 tired, gaming 等）。\n"
-                        '3. 请仅以 JSON 数组格式返回，例如：["happy", "cat"]\n'
+                        "\n【标签生成规则（极其重要）】：\n"
+                        "1. 标签设计维度：表情包标签应围绕以下两类来定义：\n"
+                        "   - 情绪/情感：如 喜、怒、哀、乐、傲娇、委屈、得意、困惑、无语 等。\n"
+                        "   - 行为/场景/事物：如 吃喝、睡觉、抢红包、奶茶、吃瓜、打游戏 等。\n"
+                        "2. 优先匹配已有标签：你必须首选并复用【已有标签列表】中语义最接近的标签。\n"
+                        "3. 绝对禁止生成同义/近义新标签（防止标签库膨胀与碎片化）：\n"
+                        "   - 在生成新标签之前，请仔细比对它与已有标签的语义。如果已有标签能表达相同或极为相似的意思，必须强制复用已有标签。例如：若已有 'happy'，禁止生成 '开心'、'快乐' 或 '高兴'；若已有 '红包'，禁止生成 '抢红包' 或 '发红包'。\n"
+                        "4. 支持与首选中文标签：我们全面支持中文标签。对于一些富有特色、不易用英文单词贴切表达的概念（如 奶茶、红包、吃瓜、贴贴、摸头 等）或标准中文情感词汇，请优先生成中文标签；其他通用英文标签亦可复用或生成（如 happy, sad, work, sleep）。\n"
+                        "5. 只有在已有标签列表中完全没有任何语义极度沾边的标签时，才允许生成新的简短中文或英文标签。\n"
+                        '6. 请仅以 JSON 数组格式返回，例如：["happy", "奶茶"]\n'
                         "不要返回任何其他内容（如 markdown 代码块标记、解释等），只返回 JSON 数组。"
                     )
 
@@ -826,7 +822,7 @@ class EventHandlers:
                             if isinstance(data, list):
                                 parsed_categories = [str(x) for x in data]
                             else:
-                                for cat in valid_descriptions.keys():
+                                for cat in existing_tags:
                                     if cat in raw_text:
                                         parsed_categories.append(cat)
 
@@ -839,21 +835,12 @@ class EventHandlers:
                                     if cat in valid_categories:
                                         resolved_categories.append(cat)
                                     else:
-                                        matched_cat = None
-                                        for (
-                                            real_cat,
-                                            desc,
-                                        ) in sender.category_mapping.items():
-                                            if cat == desc:
-                                                resolved_categories.append(real_cat)
-                                                break
+                                        # 允许作为自定义的新标签
+                                        clean_cat = cat.lower()
+                                        if len(clean_cat) <= 20:
+                                            resolved_categories.append(clean_cat)
                                         else:
-                                            # 允许作为自定义的新标签
-                                            clean_cat = cat.lower()
-                                            if len(clean_cat) <= 20:
-                                                resolved_categories.append(clean_cat)
-                                            else:
-                                                invalid_categories.append(cat)
+                                            invalid_categories.append(cat)
                         if not resolved_categories:
                             multimodal_failed = True
                     except Exception as e:

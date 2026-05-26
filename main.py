@@ -10,12 +10,9 @@ from .backend.category_manager import CategoryManager
 from .backend.commands_handler import CommandsHandler
 from .backend.event_handlers import EventHandlers
 from .backend.webui_manager import WebuiManager
-from .config import DEFAULT_CATEGORY_DESCRIPTIONS, MEMES_DATA_PATH, MEMES_DIR
+from .config import MEMES_DIR
 from .image_host.img_sync import ImageSync
 from .init import init_plugin
-from .utils import (
-    load_json,
-)
 
 
 @register(
@@ -96,29 +93,13 @@ class MemeSender(Star):
         self.persona_prompts_backup = {}
         self._reload_personas()
 
-    def _ensure_default_category_descriptions(self, categories: list[str]) -> None:
-        """为恢复出来但缺少描述的默认类别补回默认描述。"""
-        existing_descriptions = self.category_manager.get_descriptions()
-        updated = False
-
-        for category in categories:
-            if category in existing_descriptions:
-                continue
-            default_description = DEFAULT_CATEGORY_DESCRIPTIONS.get(category)
-            if not default_description:
-                continue
-            if self.category_manager.update_description(category, default_description):
-                existing_descriptions[category] = default_description
-                updated = True
-
-        if updated:
-            self._reload_personas()
+    @property
+    def category_mapping(self) -> dict[str, str]:
+        """向后兼容属性：返回所有分类，值为空字符串（模拟字典结构）"""
+        return dict.fromkeys(self.category_manager.get_categories(), "")
 
     def _reload_personas(self):
         """重新加载表情配置并构建提示词并注入全局人格"""
-        self.category_mapping = load_json(
-            MEMES_DATA_PATH, DEFAULT_CATEGORY_DESCRIPTIONS
-        )
         personas = self.context.provider_manager.personas
 
         if not hasattr(self, "persona_prompts_backup"):

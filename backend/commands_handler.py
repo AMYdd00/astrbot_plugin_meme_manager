@@ -104,11 +104,9 @@ class CommandsHandler:
     @staticmethod
     async def list_emotions(sender, event: AstrMessageEvent):
         """查看所有可用表情包类别"""
-        descriptions = sender.category_mapping
-        categories = "\n".join(
-            [f"- {tag}: {desc}" for tag, desc in descriptions.items()]
-        )
-        yield event.plain_result(f"🖼️ 当前图库：\n{categories}")
+        categories = sorted(sender.category_manager.get_categories())
+        categories_str = "\n".join([f"- {tag}" for tag in categories])
+        yield event.plain_result(f"🖼️ 当前图库标签：\n{categories_str}")
 
     @staticmethod
     async def upload_meme(sender, event: AstrMessageEvent, category: str = None):
@@ -174,7 +172,8 @@ class CommandsHandler:
         )
 
         if restored_categories:
-            sender._ensure_default_category_descriptions(restored_categories)
+            for cat in restored_categories:
+                sender.category_manager.add_category(cat)
 
         copied_count = sum(len(files) for files in copied_files.values())
         duplicate_count = sum(len(files) for files in duplicate_files.values())
@@ -361,10 +360,7 @@ class CommandsHandler:
                 result.append("")
                 result.append("📂 本地文件分类详情:")
                 for cat, count in sorted(local_stats.items()):
-                    desc = sender.category_mapping.get(cat, "")
-                    result.append(
-                        f"  ➜ {cat} ({desc if desc else '暂无描述'}): {count} 个"
-                    )
+                    result.append(f"  ➜ {cat}: {count} 个")
 
             result.extend(
                 [
@@ -430,8 +426,7 @@ class CommandsHandler:
             if local_stats:
                 result.append("分类详情:")
                 for cat, count in sorted(local_stats.items()):
-                    desc = sender.category_mapping.get(cat, "")
-                    result.append(f" - {cat} ({desc}): {count} 个")
+                    result.append(f" - {cat}: {count} 个")
 
             yield event.plain_result("\n".join(result))
         except Exception as e:

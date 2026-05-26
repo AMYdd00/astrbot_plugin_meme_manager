@@ -4,7 +4,7 @@ import os
 from .backend.database import migrate_filesystem_to_db
 from .config import (
     BASE_DATA_DIR,
-    DEFAULT_CATEGORY_DESCRIPTIONS,
+    DEFAULT_CATEGORIES,
     MEMES_DATA_PATH,
 )
 from .utils import copy_default_memes_if_needed, ensure_dir_exists, save_json
@@ -26,8 +26,8 @@ def init_plugin():
 
         # 初始化 memes_data.json
         if not os.path.exists(MEMES_DATA_PATH):
-            save_json(DEFAULT_CATEGORY_DESCRIPTIONS, MEMES_DATA_PATH)
-            logger.info(f"创建默认类别描述文件: {MEMES_DATA_PATH}")
+            save_json(DEFAULT_CATEGORIES, MEMES_DATA_PATH)
+            logger.info(f"创建默认分类标签文件: {MEMES_DATA_PATH}")
 
         return True
     except Exception as e:

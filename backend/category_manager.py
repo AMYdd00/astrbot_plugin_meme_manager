@@ -1,7 +1,7 @@
 import logging
 import os
 
-from ..config import DEFAULT_CATEGORY_DESCRIPTIONS, MEMES_DATA_PATH, MEMES_DIR
+from ..config import DEFAULT_CATEGORIES, MEMES_DATA_PATH, MEMES_DIR
 from ..utils import ensure_dir_exists, load_json, save_json
 
 logger = logging.getLogger(__name__)
@@ -12,17 +12,26 @@ class CategoryManager:
         """初始化类别管理器"""
         ensure_dir_exists(MEMES_DIR)
         self._ensure_data_file()
-        self.descriptions = self._load_descriptions()
+        self.categories = self._load_categories()
 
     def _ensure_data_file(self) -> None:
         """确保 memes_data.json 文件存在，不存在则创建并写入默认数据"""
         if not os.path.exists(MEMES_DATA_PATH):
-            save_json(DEFAULT_CATEGORY_DESCRIPTIONS, MEMES_DATA_PATH)
+            save_json(DEFAULT_CATEGORIES, MEMES_DATA_PATH)
             logger.info(f"创建默认类别描述文件: {MEMES_DATA_PATH}")
 
-    def _load_descriptions(self) -> dict[str, str]:
-        """加载类别描述配置"""
-        return load_json(MEMES_DATA_PATH, DEFAULT_CATEGORY_DESCRIPTIONS)
+    def _load_categories(self) -> list[str]:
+        """加载类别标签配置"""
+        data = load_json(MEMES_DATA_PATH, DEFAULT_CATEGORIES)
+        if isinstance(data, dict):
+            # 兼容旧版本：将字典中的 key 提取为列表，并保存更新
+            categories = list(data.keys())
+            save_json(categories, MEMES_DATA_PATH)
+            logger.info(f"将旧的字典格式分类迁移为列表格式: {categories}")
+            return categories
+        elif isinstance(data, list):
+            return data
+        return DEFAULT_CATEGORIES
 
     def get_local_categories(self) -> set[str]:
         """获取本地表情包库中的类别标签"""
@@ -52,35 +61,33 @@ class CategoryManager:
         返回: (missing_in_config, deleted_categories)
         """
         local_categories = self.get_local_categories()
-        config_categories = set(self.descriptions.keys())
+        config_categories = set(self.categories)
 
         return (
             list(local_categories - config_categories),  # 本地有但配置没有
             list(config_categories - local_categories),  # 配置有但本地没有
         )
 
-    def update_description(self, category: str, description: str) -> bool:
-        """更新类别描述"""
+    def add_category(self, category: str) -> bool:
+        """添加新标签"""
         try:
-            self.descriptions[category] = description  # 更新内存中的 descriptions
-            # 同步保存到文件
-            return save_json(self.descriptions, MEMES_DATA_PATH)
+            if category not in self.categories:
+                self.categories.append(category)
+                return save_json(self.categories, MEMES_DATA_PATH)
+            return True
         except Exception as e:
-            logger.error(f"更新类别描述失败: {e}")
+            logger.error(f"添加标签失败: {e}")
             return False
 
     def rename_category(self, old_name: str, new_name: str) -> bool:
         """重命名类别"""
         try:
-            if old_name not in self.descriptions:
+            if old_name not in self.categories:
                 return False
 
-            # 获取旧类别的描述
-            description = self.descriptions[old_name]
-
-            # 更新配置
-            del self.descriptions[old_name]
-            self.descriptions[new_name] = description
+            # 在列表中更新
+            idx = self.categories.index(old_name)
+            self.categories[idx] = new_name
 
             # 更新数据库中的表情标签
             from .database import get_db_conn
@@ -106,7 +113,7 @@ class CategoryManager:
             conn.close()
 
             # 同步更新内存中的数据
-            return save_json(self.descriptions, MEMES_DATA_PATH)
+            return save_json(self.categories, MEMES_DATA_PATH)
         except Exception as e:
             logger.error(f"重命名类别失败: {e}")
             return False
@@ -115,9 +122,9 @@ class CategoryManager:
         """删除类别"""
         try:
             # 从配置中删除
-            if category in self.descriptions:
-                del self.descriptions[category]
-                save_json(self.descriptions, MEMES_DATA_PATH)
+            if category in self.categories:
+                self.categories.remove(category)
+                save_json(self.categories, MEMES_DATA_PATH)
 
             # 清除表情标签和空文件
             from .models import clear_category_emojis
@@ -129,9 +136,9 @@ class CategoryManager:
             logger.error(f"删除类别失败: {e}")
             return False
 
-    def get_descriptions(self) -> dict[str, str]:
-        """获取所有类别描述"""
-        return self.descriptions.copy()  # 返回字典的副本
+    def get_categories(self) -> list[str]:
+        """获取所有分类标签"""
+        return self.categories.copy()  # 返回副本
 
     def sync_with_filesystem(self) -> bool:
         """同步文件系统和配置"""
@@ -141,12 +148,12 @@ class CategoryManager:
 
             # 为新类别添加默认描述
             for category in local_categories:
-                if category not in self.descriptions:
-                    self.descriptions[category] = "请添加描述"
+                if category not in self.categories:
+                    self.categories.append(category)
                     changed = True
 
             if changed:
-                return save_json(self.descriptions, MEMES_DATA_PATH)
+                return save_json(self.categories, MEMES_DATA_PATH)
             return True
         except Exception as e:
             logger.error(f"同步文件系统失败: {e}")

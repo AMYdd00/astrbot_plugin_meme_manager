@@ -208,7 +208,7 @@
                   </span>
                 </div>
                 <div class="category-actions" v-if="activeCategory !== 'all'">
-                  <button class="btn-secondary" @click="openEditCategory(activeCategory)">编辑描述</button>
+                  <button class="btn-secondary" @click="openRenameCategory(activeCategory)">重命名标签</button>
                   <button class="btn-secondary" 
                           :disabled="!emojiData[activeCategory] || emojiData[activeCategory].length === 0"
                           @click="toggleCategorySelection(activeCategory)">
@@ -226,7 +226,7 @@
                   </button>
                 </div>
               </div>
-              <p class="description">{% raw %}{{ activeCategory === 'all' ? '展示当前过滤人格下的所有表情包' : (tagDescriptions[activeCategory] || '请添加描述') }}{% endraw %}</p>
+              <p class="description" v-if="activeCategory === 'all'">展示当前过滤人格下的所有表情包</p>
             </div>
 
             <!-- 表情包 Grid 网格 -->
@@ -357,21 +357,19 @@
         </div>
       </div>
 
-      <!-- 类别描述编辑模态框 -->
-      <div v-if="editCategoryModal.visible" class="category-edit-modal" role="dialog" aria-modal="true">
+      <!-- 类别重命名模态框 -->
+      <div v-if="renameCategoryModal.visible" class="category-edit-modal" role="dialog" aria-modal="true">
         <div class="category-edit-modal-card">
-          <p class="category-edit-modal-eyebrow">类别管理</p>
-          <h2>修改类别描述</h2>
-          <p>修改类别 「{% raw %}{{ editCategoryModal.originalCategory }}{% endraw %}」 的描述信息。</p>
+          <p class="category-edit-modal-eyebrow">标签管理</p>
+          <h2>重命名标签</h2>
+          <p>重命名标签 「{% raw %}{{ renameCategoryModal.originalCategory }}{% endraw %}」 及其关联 of 表情包。</p>
           <div class="category-edit-form-panel">
-            <label>类别名称</label>
-            <input type="text" v-model="editCategoryModal.category" class="form-control" disabled />
-            <label style="margin-top: 10px;">描述信息</label>
-            <input type="text" v-model="editCategoryModal.description" class="form-control" />
+            <label>新标签名称</label>
+            <input type="text" v-model="renameCategoryModal.category" class="form-control" placeholder="请输入新标签名称" />
           </div>
           <div class="category-edit-modal-actions">
-            <button class="btn-secondary" @click="editCategoryModal.visible = false">取消</button>
-            <button class="btn-primary" @click="saveEditCategory">
+            <button class="btn-secondary" @click="renameCategoryModal.visible = false">取消</button>
+            <button class="btn-primary" @click="saveRenameCategory">
               保存修改
             </button>
           </div>
@@ -381,13 +379,11 @@
       <!-- 添加类别模态框 -->
       <div v-if="addCategoryForm.visible" class="category-edit-modal" role="dialog" aria-modal="true">
         <div class="category-edit-modal-card">
-          <p class="category-edit-modal-eyebrow">类别管理</p>
+          <p class="category-edit-modal-eyebrow">标签管理</p>
           <h2>添加新分类</h2>
           <div class="category-edit-form-panel">
             <label>分类名称</label>
             <input type="text" v-model="addCategoryForm.name" placeholder="分类名称" class="form-control" />
-            <label style="margin-top: 10px;">分类描述</label>
-            <input type="text" v-model="addCategoryForm.description" placeholder="分类描述" class="form-control" />
           </div>
           <div class="category-edit-modal-actions">
             <button class="btn-secondary" @click="addCategoryForm.visible = false">取消</button>

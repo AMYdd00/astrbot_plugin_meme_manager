@@ -79,13 +79,11 @@ createApp({
     const addCategoryForm = reactive({
       visible: false,
       name: "",
-      description: "",
     });
 
-    const editCategoryModal = reactive({
+    const renameCategoryModal = reactive({
       visible: false,
       category: "",
-      description: "",
       originalCategory: "",
     });
 
@@ -706,37 +704,48 @@ createApp({
     // ----------------------------------------------------
     // Actions - Categories Management
     // ----------------------------------------------------
-    const openEditCategory = (category) => {
-      editCategoryModal.category = category;
-      editCategoryModal.originalCategory = category;
-      editCategoryModal.description = tagDescriptions.value[category] || "";
-      editCategoryModal.visible = true;
+    const openRenameCategory = (category) => {
+      renameCategoryModal.category = category;
+      renameCategoryModal.originalCategory = category;
+      renameCategoryModal.visible = true;
     };
 
-    const saveEditCategory = async () => {
+    const saveRenameCategory = async () => {
+      const oldName = renameCategoryModal.originalCategory;
+      const newName = renameCategoryModal.category.trim();
+      if (!newName) {
+        showToast("标签名称不能为空", "warning");
+        return;
+      }
+      if (oldName === newName) {
+        renameCategoryModal.visible = false;
+        return;
+      }
       try {
-        const res = await fetch("/api/category/restore", {
+        const res = await fetch("/api/category/rename", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            category: editCategoryModal.category,
-            description: editCategoryModal.description,
+            old_name: oldName,
+            new_name: newName,
           }),
         });
-        if (!res.ok) throw new Error("更新类别失败");
+        if (!res.ok) throw new Error("重命名类别失败");
 
-        showToast(`类别「${editCategoryModal.category}」信息已更新。`, "success", "更新成功");
-        editCategoryModal.visible = false;
+        showToast(`标签已成功从「${oldName}」重命名为「${newName}」。`, "success", "重命名成功");
+        renameCategoryModal.visible = false;
+        if (activeCategory.value === oldName) {
+          activeCategory.value = newName;
+        }
         await fetchEmojis();
         await checkSyncStatus(false);
       } catch (e) {
-        showToast(e.message, "error", "更新失败");
+        showToast(e.message, "error", "重命名失败");
       }
     };
 
     const saveNewCategory = async () => {
       const name = addCategoryForm.name.trim();
-      const desc = addCategoryForm.description.trim() || "请添加描述";
 
       if (!name) {
         showToast("请输入分类名称再保存", "warning");
@@ -747,13 +756,12 @@ createApp({
         const res = await fetch("/api/category/restore", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ category: name, description: desc }),
+          body: JSON.stringify({ category: name }),
         });
         if (!res.ok) throw new Error("添加分类失败");
 
         showToast(`新分类「${name}」添加成功。`, "success", "保存成功");
         addCategoryForm.name = "";
-        addCategoryForm.description = "";
         addCategoryForm.visible = false;
         await fetchEmojis();
         await checkSyncStatus(false);
@@ -1269,7 +1277,7 @@ createApp({
       moveModal,
       batchPersonaModal,
       addCategoryForm,
-      editCategoryModal,
+      renameCategoryModal,
       syncChecking,
       syncStatus,
       imgHostSyncing,
@@ -1305,8 +1313,8 @@ createApp({
       closeMoveModal,
       handleMoveTarget,
       clearAllEmojiFiles,
-      openEditCategory,
-      saveEditCategory,
+      openRenameCategory,
+      saveRenameCategory,
       saveNewCategory,
       clearCategory,
       deleteCategory,
