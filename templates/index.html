@@ -156,14 +156,11 @@
               <button id="toggle-selection-mode-btn" class="btn-secondary" :class="{ active: selectionEnabled }" @click="toggleSelectionMode">
                 <i class="fas fa-list-check icon"></i>选择
               </button>
-              <button id="batch-move-btn" class="btn-secondary" :disabled="selectedEmojis.size === 0" @click="openMoveModal">
-                <i class="fas fa-right-left icon"></i>移动
+              <button id="batch-persona-btn" class="btn-secondary" :disabled="selectedEmojis.size === 0" @click="openBatchPersonaModal">
+                <i class="fas fa-user-gear icon"></i>设置人格
               </button>
               <button id="batch-delete-btn" class="btn-danger" :disabled="selectedEmojis.size === 0" @click="batchDeleteSelected">
                 <i class="fas fa-trash-can icon"></i>删除
-              </button>
-              <button id="clear-all-btn" class="btn-danger-outline" @click="clearAllEmojiFiles">
-                <i class="fas fa-radiation icon"></i>清空全部
               </button>
             </div>
           </div>
@@ -199,10 +196,9 @@
                   <button class="btn-secondary" 
                           :disabled="!emojiData[activeCategory] || emojiData[activeCategory].length === 0"
                           @click="toggleCategorySelection(activeCategory)">
-                    {% raw %}{{ isAllSelectedInCategory(activeCategory) ? '取消本类' : '本类全选' }}{% endraw %}
+                    {% raw %}{{ isAllSelectedInCategory(activeCategory) ? '取消选择' : '全选' }}{% endraw %}
                   </button>
-                  <button class="btn-danger" @click="clearCategory(activeCategory)">清空本类</button>
-                  <button class="btn-danger-outline icon-only-btn" :title="'删除类别 ' + activeCategory" @click="deleteCategory(activeCategory)">
+                  <button class="btn-danger-outline icon-only-btn" :title="'删除分类 ' + activeCategory" @click="deleteCategory(activeCategory)">
                     <i class="fas fa-trash"></i>
                   </button>
                 </div>
@@ -382,23 +378,29 @@
         </div>
       </div>
 
-      <!-- 批量移动目标模态框 -->
-      <div v-if="moveModal.visible" class="move-target-modal" role="dialog" aria-modal="true">
+      <!-- 批量修改允许人格限制模态框 -->
+      <div v-if="batchPersonaModal.visible" class="move-target-modal" role="dialog" aria-modal="true">
         <div class="move-target-modal-card">
-          <p class="move-target-modal-eyebrow">批量移动</p>
-          <h2>选择目标分类</h2>
-          <p>选择一个分类，将已选表情包批量移动过去。</p>
-          <div class="move-target-list">
-            <button v-for="(emojis, category) in emojiData" 
-                    v-show="category !== activeCategory" 
-                    :key="category" 
-                    class="move-target-btn" 
-                    @click="handleMoveTarget(category)">
-              {% raw %}{{ category }}{% endraw %}
-            </button>
+          <p class="move-target-modal-eyebrow">批量设置</p>
+          <h2>允许的人格限制</h2>
+          <p>修改已选中的 {% raw %}{{ selectedEmojis.size }}{% endraw %} 个表情的人格可用性限制（留空或勾选全部表示全局可用）。</p>
+          
+          <div class="drawer-personas-list" style="margin: 20px 0; text-align: left; max-height: 250px; overflow-y: auto; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; cursor: pointer; color: var(--text-primary); text-transform: none; letter-spacing: normal;">
+              <input type="checkbox" value="*" :checked="batchPersonaModal.personas.includes('*')" @change="togglePersonaInBatch('*')" style="width: 14px; height: 14px;" />
+              <span>全局可用 (*)</span>
+            </label>
+            <label v-for="p in systemPersonas" :key="p.id" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; cursor: pointer; color: var(--text-primary); text-transform: none; letter-spacing: normal;">
+              <input type="checkbox" :value="p.id" :checked="batchPersonaModal.personas.includes(p.id) && !batchPersonaModal.personas.includes('*')" @change="togglePersonaInBatch(p.id)" style="width: 14px; height: 14px;" />
+              <span>{% raw %}{{ p.name }}{% endraw %} ({% raw %}{{ p.id }}{% endraw %})</span>
+            </label>
           </div>
-          <div class="move-target-modal-actions">
-            <button class="btn-secondary" @click="closeMoveModal">取消</button>
+          
+          <div class="confirm-modal-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px;">
+            <button class="btn-secondary" @click="closeBatchPersonaModal">取消</button>
+            <button class="btn-primary" @click="saveBatchPersonas">
+              保存修改
+            </button>
           </div>
         </div>
       </div>

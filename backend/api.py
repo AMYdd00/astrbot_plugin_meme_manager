@@ -722,3 +722,35 @@ async def get_emoji_info(filename):
         ), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@api.route("/emoji/batch_edit_personas", methods=["POST"])
+async def batch_edit_personas():
+    """批量修改表情包允许的人格"""
+    try:
+        data = await request.get_json()
+        filenames = data.get("filenames")
+        personas = data.get("personas")  # List of persona IDs, or ["*"]
+
+        if not isinstance(filenames, list) or not filenames:
+            return jsonify({"message": "filenames list is required"}), 400
+
+        from .database import get_db_conn
+
+        conn = get_db_conn()
+        cursor = conn.cursor()
+
+        personas_str = ",".join(personas) if isinstance(personas, list) else personas
+
+        for filename in filenames:
+            cursor.execute(
+                "UPDATE memes SET personas = ? WHERE filename = ?",
+                (personas_str, filename),
+            )
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": "Batch personas updated successfully"}), 200
+    except Exception as e:
+        logger.error(f"批量更新人格限制失败: {e}", exc_info=True)
+        return jsonify({"message": str(e)}), 500

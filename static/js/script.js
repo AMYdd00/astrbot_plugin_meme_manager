@@ -71,6 +71,11 @@ createApp({
       resolve: null,
     });
 
+    const batchPersonaModal = reactive({
+      visible: false,
+      personas: [],
+    });
+
     const addCategoryForm = reactive({
       visible: false,
       name: "",
@@ -323,8 +328,8 @@ createApp({
     // ----------------------------------------------------
     const deleteEmoji = async (category, emoji) => {
       const confirmed = await confirm(
-        "删除表情包",
-        `确认删除分类「${category}」中的表情包「${emoji}」？此操作不可恢复。`,
+        "删除标签 / 文件",
+        `确认从分类「${category}」下移除表情包？若该表情包不属于其他任何分类，它将被物理删除。`,
         "确认删除",
         "danger"
       );
@@ -480,8 +485,8 @@ createApp({
       if (items.length === 0) return;
 
       const confirmed = await confirm(
-        "批量删除表情包",
-        `确认删除已选中的 ${items.length} 个表情包？此操作不可恢复。`,
+        "批量删除标签 / 文件",
+        `确认删除已选中的 ${items.length} 个表情包分类标签？若其中包含的表情包不属于其他任何分类，对应的磁盘文件将被物理删除。`,
         "确认批量删除",
         "danger"
       );
@@ -514,6 +519,63 @@ createApp({
       showToast(`已成功批量删除 ${successCount} 个表情包。`, "success", "批量删除完成");
       selectedEmojis.value.clear();
       await fetchEmojis();
+    };
+
+    const openBatchPersonaModal = () => {
+      batchPersonaModal.personas = ["*"];
+      batchPersonaModal.visible = true;
+    };
+
+    const closeBatchPersonaModal = () => {
+      batchPersonaModal.visible = false;
+      batchPersonaModal.personas = [];
+    };
+
+    const togglePersonaInBatch = (personaId) => {
+      if (personaId === "*") {
+        if (batchPersonaModal.personas.includes("*")) {
+          batchPersonaModal.personas = [];
+        } else {
+          batchPersonaModal.personas = ["*"];
+        }
+      } else {
+        const gIdx = batchPersonaModal.personas.indexOf("*");
+        if (gIdx > -1) batchPersonaModal.personas.splice(gIdx, 1);
+
+        const idx = batchPersonaModal.personas.indexOf(personaId);
+        if (idx > -1) {
+          batchPersonaModal.personas.splice(idx, 1);
+        } else {
+          batchPersonaModal.personas.push(personaId);
+        }
+      }
+    };
+
+    const saveBatchPersonas = async () => {
+      const items = Array.from(selectedEmojis.value.values());
+      if (items.length === 0) return;
+      const filenames = items.map((item) => item.emoji);
+
+      const personas = batchPersonaModal.personas.length === 0 ? ["*"] : batchPersonaModal.personas;
+
+      try {
+        const res = await fetch("/api/emoji/batch_edit_personas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filenames: filenames,
+            personas: personas,
+          }),
+        });
+        if (!res.ok) throw new Error("批量更新人格限制失败");
+
+        showToast("批量设置人格限制成功！", "success", "修改成功");
+        closeBatchPersonaModal();
+        selectedEmojis.value.clear();
+        await fetchEmojis();
+      } catch (e) {
+        showToast(e.message, "error", "批量设置失败");
+      }
     };
 
     const openMoveModal = () => {
@@ -680,7 +742,7 @@ createApp({
       const count = emojiData.value[category]?.length || 0;
       const confirmed = await showDangerConfirm(
         `删除分类「${category}」`,
-        `确定要彻底删除分类「${category}」吗？这会同时删除磁盘文件夹以及其中 ${count} 个表情包。`
+        `确认删除分类「${category}」吗？此操作将清除该分类的所有表情包分类标签，若表情包不属于其他任何分类，对应的磁盘文件将被物理删除。`
       );
       if (!confirmed) return;
 
@@ -1112,6 +1174,7 @@ createApp({
       confirmDialog,
       dangerConfirmDialog,
       moveModal,
+      batchPersonaModal,
       addCategoryForm,
       editCategoryModal,
       syncChecking,
@@ -1141,6 +1204,10 @@ createApp({
       isAllSelectedInCategory,
       toggleCategorySelection,
       batchDeleteSelected,
+      openBatchPersonaModal,
+      closeBatchPersonaModal,
+      togglePersonaInBatch,
+      saveBatchPersonas,
       openMoveModal,
       closeMoveModal,
       handleMoveTarget,
