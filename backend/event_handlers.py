@@ -646,19 +646,39 @@ class EventHandlers:
             # 5. 保存前哈希计算与判重
             raw_hash = hashlib.sha256(content).hexdigest()
 
-            # 6. 多模态 LLM 分类（如果启用）
+            # 6. 标签/分类解析与判定
             resolved_categories = []
             invalid_categories = []
+            valid_categories = set(sender.category_manager.get_descriptions().keys())
 
-            if getattr(sender, "multimodal_llm_enabled", False) and not categories:
+            # A. 首先尝试解析显式传入的 categories 参数
+            if categories:
+                for category in categories:
+                    category = category.strip()
+                    if not category:
+                        continue
+                    if category in valid_categories:
+                        resolved_categories.append(category)
+                    else:
+                        for cat, desc in sender.category_mapping.items():
+                            if category == desc:
+                                resolved_categories.append(cat)
+                                break
+                        else:
+                            invalid_categories.append(category)
+
+            # B. 如果解析后没有得到任何合法的分类，且启用了多模态，则调用多模态模型自动分类
+            multimodal_called = False
+            multimodal_failed = False
+            if not resolved_categories and getattr(sender, "multimodal_llm_enabled", False):
                 provider_id = getattr(sender, "multimodal_llm_provider_id", "")
                 if not provider_id:
                     provider_id = await sender.context.get_current_chat_provider_id(
                         umo=event.unified_msg_origin
                     )
                 if provider_id:
+                    multimodal_called = True
                     import base64
-
                     mime_type = "image/jpeg"
                     if file_type == "png":
                         mime_type = "image/png"
@@ -731,36 +751,20 @@ class EventHandlers:
                                                 break
                                         else:
                                             invalid_categories.append(cat)
+                        if not resolved_categories:
+                            multimodal_failed = True
                     except Exception as e:
+                        multimodal_failed = True
                         logger.error(f"多模态模型分析图片分类失败: {e}", exc_info=True)
 
-            # 如果未启用或多模态分类失败，且提供了类别，则使用原逻辑解析类别
-            if not resolved_categories and categories:
-                valid_categories = set(
-                    sender.category_manager.get_descriptions().keys()
-                )
-                for category in categories:
-                    category = category.strip()
-                    if not category:
-                        continue
-                    if category in valid_categories:
-                        resolved_categories.append(category)
-                    else:
-                        for cat, desc in sender.category_mapping.items():
-                            if category == desc:
-                                resolved_categories.append(cat)
-                                break
-                        else:
-                            invalid_categories.append(category)
-
+            # C. 最终校验
             if not resolved_categories:
-                if getattr(sender, "multimodal_llm_enabled", False):
+                if multimodal_called and multimodal_failed:
                     return "多模态模型判定表情分类失败，且未提供有效的分类名称。"
-                else:
-                    valid_categories = set(
-                        sender.category_manager.get_descriptions().keys()
-                    )
+                elif invalid_categories:
                     return f"无效的表情包分类 {invalid_categories}，当前可用的分类有：{', '.join(valid_categories)}"
+                else:
+                    return "请输入至少一个有效的标签/分类名称。"
 
             # 7. 数据库排重及记录更新
             from .database import get_db_conn
