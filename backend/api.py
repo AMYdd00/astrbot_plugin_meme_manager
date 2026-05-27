@@ -59,13 +59,20 @@ async def get_all_emojis():
     conn.close()
 
     emoji_data = {}
+    mtimes = {}
     for row in rows:
         filename = row["filename"]
         emotions = row["emotions"]
 
         # Verify file exists
-        if not os.path.exists(os.path.join(MEMES_DIR, filename)):
+        full_path = os.path.join(MEMES_DIR, filename)
+        if not os.path.exists(full_path):
             continue
+
+        try:
+            mtimes[filename] = int(os.path.getmtime(full_path))
+        except Exception:
+            mtimes[filename] = 0
 
         if emotions:
             for emo in emotions.split(","):
@@ -81,7 +88,10 @@ async def get_all_emojis():
             if cat not in emoji_data:
                 emoji_data[cat] = []
 
-    return jsonify(emoji_data)
+    return jsonify({
+        "categories": emoji_data,
+        "mtimes": mtimes
+    })
 
 
 @api.route("/emoji/<category>", methods=["GET"])

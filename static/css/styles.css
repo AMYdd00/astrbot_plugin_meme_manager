@@ -1244,3 +1244,31 @@ button:disabled {
   border-radius: var(--radius-sm);
   margin: 4px 0 0 0;
 }
+
+/* Emoji upload banner at top of category */
+.emoji-upload-banner {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: var(--transition);
+  margin-bottom: 24px;
+}
+.emoji-upload-banner:hover {
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.03);
+}
+
+/* Fix browser button padding stretching circle overlays */
+.selection-indicator,
+.delete-btn,
+.edit-btn {
+  padding: 0 !important;
+}

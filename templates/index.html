@@ -238,57 +238,75 @@
             </div>
 
             <!-- 表情包 Grid 网格 -->
-            <div class="emoji-grid">
-              <template v-for="emoji in (activeCategory === 'all' ? allEmojisList : emojiData[activeCategory])" :key="emoji">
-                <div class="emoji-card" :class="{ active: activeDetailEmoji === emoji }" :data-emoji="emoji">
-                  <div class="emoji-item" 
-                       :class="{ selected: isEmojiSelected(activeCategory, emoji), 'selection-mode': selectionEnabled }"
-                       :style="{ backgroundImage: 'url(/memes/' + encodeURIComponent(activeCategory) + '/' + encodeURIComponent(emoji) + ')' }"
-                       :draggable="activeCategory !== 'all'" 
-                       @dragstart="onDragStart($event, emoji, activeCategory)"
-                       @click="onEmojiClick(activeCategory, emoji)"
-                       @contextmenu.prevent="activeCategory !== 'all' && openContextMenu($event, activeCategory, emoji)">
-                    
-                    <!-- 选中标记按钮 -->
-                    <button type="button" class="selection-indicator" aria-label="选择表情包" @click.stop="toggleEmojiSelection(activeCategory, emoji)"></button>
-                    
-                    <!-- 删除按钮 -->
-                    <button v-if="activeCategory !== 'all'" class="delete-btn" @click.stop="deleteEmoji(activeCategory, emoji)">&times;</button>
-                  </div>
+            <!-- 上传区域 (横跨顶部的 Banner 样式) -->
+            <div v-if="activeCategory && activeCategory !== 'all'"
+                 class="emoji-upload-banner" 
+                 @click="triggerFileInput(activeCategory)"
+                 @dragover.prevent
+                 @drop.prevent="onUploadDrop($event, activeCategory)"
+                 :class="{ uploading: uploadStateByCategory.has(activeCategory) }">
+              <div class="emoji-upload-icon">
+                <i :class="uploadStateByCategory.has(activeCategory) ? 'fas fa-spinner fa-spin' : 'fas fa-cloud-arrow-up'"></i>
+              </div>
+              <div class="emoji-upload-title">
+                {% raw %}{{ uploadStateByCategory.has(activeCategory) ? '正在上传...' : '上传表情包到当前分类' }}{% endraw %}
+              </div>
+              <div class="emoji-upload-hint">
+                <span v-if="uploadStateByCategory.has(activeCategory)">
+                  {% raw %}{{ uploadStateByCategory.get(activeCategory).text }}{% endraw %}
+                </span>
+                <span v-else>点击或拖拽图片到此处，支持批量上传</span>
+              </div>
+              <div v-if="uploadStateByCategory.has(activeCategory)" class="emoji-upload-progress" style="width: 200px; margin-top: 5px;">
+                <span class="emoji-upload-progress-bar" :style="{ width: uploadStateByCategory.get(activeCategory).progress + '%' }"></span>
+              </div>
+              <input type="file" :id="'file-input-' + activeCategory" style="display: none;" accept="image/*" multiple @change="onFileSelected($event, activeCategory)" />
+            </div>
 
-                  <!-- 表情包卡片底部多标签 -->
-                  <div class="emoji-tags">
-                    <span v-for="t in getEmojiTags(emoji)" :key="t" class="tag-pill">
-                      {% raw %}{{ t }}{% endraw %}
-                    </span>
-                  </div>
-                </div>
-              </template>
+            <!-- 空状态展示 -->
+            <div v-if="activeCategoryTimeGroups.length === 0" style="padding: 60px; text-align: center; color: var(--text-secondary);">
+              <i class="far fa-face-smile" style="font-size: 32px; margin-bottom: 12px; color: var(--border-color);"></i>
+              <p>当前分类下暂无表情包</p>
+            </div>
 
-              <!-- 上传卡片 -->
-              <div v-if="activeCategory !== 'all'"
-                   class="emoji-upload" 
-                   @click="triggerFileInput(activeCategory)"
-                   @dragover.prevent
-                   @drop.prevent="onUploadDrop($event, activeCategory)"
-                   :class="{ uploading: uploadStateByCategory.has(activeCategory) }">
-                  <div class="emoji-upload-icon">
-                    <i :class="uploadStateByCategory.has(activeCategory) ? 'fas fa-spinner fa-spin' : 'fas fa-cloud-arrow-up'"></i>
-                  </div>
-                  <div class="emoji-upload-title">
-                    {% raw %}{{ uploadStateByCategory.has(activeCategory) ? '正在上传...' : '上传表情包' }}{% endraw %}
-                  </div>
-                  <div class="emoji-upload-hint">
-                    <span v-if="uploadStateByCategory.has(activeCategory)">
-                      {% raw %}{{ uploadStateByCategory.get(activeCategory).text }}{% endraw %}
-                    </span>
-                    <span v-else>点击或拖拽图片到这里上传</span>
-                  </div>
-                  <div v-if="uploadStateByCategory.has(activeCategory)" class="emoji-upload-progress">
-                    <span class="emoji-upload-progress-bar" :style="{ width: uploadStateByCategory.get(activeCategory).progress + '%' }"></span>
-                  </div>
-                  <input type="file" :id="'file-input-' + activeCategory" style="display: none;" accept="image/*" multiple @change="onFileSelected($event, activeCategory)" />
+            <!-- 表情包分级网格 -->
+            <div v-else class="emoji-time-groups">
+              <div v-for="group in activeCategoryTimeGroups" :key="group.title" class="time-group-section" style="margin-bottom: 24px;">
+                <h3 class="time-group-header" style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                  <i class="far fa-clock"></i> {% raw %}{{ group.title }}{% endraw %}
+                  <span class="group-count" style="font-size: 10px; padding: 2px 6px; background: rgba(0,0,0,0.05); border-radius: 10px; color: var(--text-secondary);">
+                    {% raw %}{{ group.list.length }}{% endraw %}
+                  </span>
+                </h3>
+                
+                <div class="emoji-grid">
+                  <template v-for="emoji in group.list" :key="emoji">
+                    <div class="emoji-card" :class="{ active: activeDetailEmoji === emoji }" :data-emoji="emoji">
+                      <div class="emoji-item" 
+                           :class="{ selected: isEmojiSelected(activeCategory, emoji), 'selection-mode': selectionEnabled }"
+                           :style="{ backgroundImage: 'url(/memes/' + encodeURIComponent(activeCategory) + '/' + encodeURIComponent(emoji) + ')' }"
+                           :draggable="activeCategory !== 'all'" 
+                           @dragstart="onDragStart($event, emoji, activeCategory)"
+                           @click="onEmojiClick(activeCategory, emoji)"
+                           @contextmenu.prevent="activeCategory !== 'all' && openContextMenu($event, activeCategory, emoji)">
+                        
+                        <!-- 选中标记按钮 -->
+                        <button type="button" class="selection-indicator" aria-label="选择表情包" @click.stop="toggleEmojiSelection(activeCategory, emoji)"></button>
+                        
+                        <!-- 删除按钮 -->
+                        <button v-if="activeCategory !== 'all'" class="delete-btn" @click.stop="deleteEmoji(activeCategory, emoji)">&times;</button>
+                      </div>
+
+                      <!-- 表情包卡片底部多标签 -->
+                      <div class="emoji-tags">
+                        <span v-for="t in getEmojiTags(emoji)" :key="t" class="tag-pill">
+                          {% raw %}{{ t }}{% endraw %}
+                        </span>
+                      </div>
+                    </div>
+                  </template>
                 </div>
+              </div>
             </div>
           </div>
         </div>
@@ -458,7 +476,7 @@
             <span class="drawer-title">导入已存表情到分类「{% raw %}{{ activeCategory }}{% endraw %}」</span>
             <button class="drawer-close-btn" @click="closeImportModal">&times;</button>
           </div>
-          <div class="drawer-content" style="max-height: 50vh; overflow-y: auto;">
+          <div class="drawer-content" style="max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
             <p style="margin-bottom: 15px; color: var(--text-secondary);">请选择要追加到当前分类的表情包（已选中 {% raw %}{{ importModal.selectedEmojis.size }}{% endraw %} 个）：</p>
             <div v-if="importableEmojisList.length === 0" style="padding: 40px; text-align: center; color: var(--text-secondary);">
               没有可导入的其他表情包。

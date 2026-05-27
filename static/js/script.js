@@ -7,6 +7,7 @@ createApp({
     // State variables
     // ----------------------------------------------------
     const emojiData = ref({});
+    const emojiMtimes = ref({});
     const tagDescriptions = ref({});
     const systemPersonas = ref([]);
     const personaTags = ref({});
@@ -162,16 +163,17 @@ createApp({
           })
         ]);
 
-        emojiData.value = emojiRes;
+        emojiData.value = emojiRes.categories || {};
+        emojiMtimes.value = emojiRes.mtimes || {};
         tagDescriptions.value = tagRes;
 
         // Clean up selections of items that no longer exist
         pruneSelections();
 
         // Default to 'all' if activeCategory is unset or missing
-        const categories = Object.keys(emojiRes);
+        const categories = Object.keys(emojiData.value);
         if (categories.length > 0) {
-          if (!activeCategory.value || (!emojiRes[activeCategory.value] && activeCategory.value !== 'all')) {
+          if (!activeCategory.value || (!emojiData.value[activeCategory.value] && activeCategory.value !== 'all')) {
             activeCategory.value = 'all';
           }
         } else {
@@ -277,6 +279,49 @@ createApp({
       if (!activeCategory.value || activeCategory.value === 'all') return [];
       const currentList = emojiData.value[activeCategory.value] || [];
       return allEmojisList.value.filter((emoji) => !currentList.includes(emoji));
+    });
+
+    const activeCategoryTimeGroups = computed(() => {
+      if (!activeCategory.value) return [];
+      const list = activeCategory.value === 'all' ? allEmojisList.value : (emojiData.value[activeCategory.value] || []);
+      
+      const now = new Date();
+      // start of today in local time
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
+      const sevenDaysAgoStart = todayStart - 7 * 24 * 60 * 60 * 1000;
+
+      const groups = [
+        { title: "今天 (Today)", list: [] },
+        { title: "昨天 (Yesterday)", list: [] },
+        { title: "最近一周 (Last 7 Days)", list: [] },
+        { title: "更早以前 (Earlier)", list: [] }
+      ];
+
+      list.forEach((emoji) => {
+        const mtimeSec = emojiMtimes.value[emoji] || 0;
+        const mtimeMs = mtimeSec * 1000;
+        if (mtimeMs >= todayStart) {
+          groups[0].list.push(emoji);
+        } else if (mtimeMs >= yesterdayStart) {
+          groups[1].list.push(emoji);
+        } else if (mtimeMs >= sevenDaysAgoStart) {
+          groups[2].list.push(emoji);
+        } else {
+          groups[3].list.push(emoji);
+        }
+      });
+
+      // Sort each group descending (newest first)
+      groups.forEach((g) => {
+        g.list.sort((a, b) => {
+          const ta = emojiMtimes.value[a] || 0;
+          const tb = emojiMtimes.value[b] || 0;
+          return tb - ta;
+        });
+      });
+
+      return groups.filter((g) => g.list.length > 0);
     });
 
     const getEmojiTags = (emoji) => {
@@ -1348,10 +1393,12 @@ createApp({
 
     return {
       emojiData,
+      emojiMtimes,
       tagDescriptions,
       systemPersonas,
       activeCategory,
       allEmojisList,
+      activeCategoryTimeGroups,
       activeDetailEmoji,
       personaFilter,
       toasts,
