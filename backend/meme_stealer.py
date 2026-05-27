@@ -234,7 +234,7 @@ async def steal_meme(
                     save_steal_attempt(raw_hash, persona_id, False)
                 except Exception as ex:
                     logger.warning(f"保存尝试记录失败: {ex}")
-                return "该图片不符合当前人格的表情包收集偏好，拒绝收录。"
+                return f"该图片不符合当前人格的表情包收集偏好，拒绝收录。原因: {match_reason}"
 
     # 7. 标签/分类解析与判定
     resolved_categories = []
