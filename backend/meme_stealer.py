@@ -12,6 +12,7 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.core.message.components import Image, Reply
 
+from ..utils import get_config_value
 from .database import get_db_conn, get_steal_attempt, save_steal_attempt
 from .helpers import get_persona_id, get_persona_prompt
 from .models import save_and_register_meme
@@ -560,7 +561,7 @@ async def auto_steal_meme(sender, event: AstrMessageEvent):
     # C. 统计并递增该图片哈希的全局看见次数，若小于设定的阈值，则仅记录次数不触发偷图
     from .database import increment_image_seen_count
 
-    min_seen = sender.config.get("auto_steal_min_seen", 2)
+    min_seen = get_config_value(sender.config, "auto_steal_min_seen", 2)
     seen_count = increment_image_seen_count(raw_hash)
     if seen_count < min_seen:
         logger.info(

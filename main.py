@@ -16,6 +16,7 @@ from .backend.webui_manager import WebuiManager
 from .config import MEMES_DATA_PATH, MEMES_DIR
 from .image_host.img_sync import ImageSync
 from .init import init_plugin
+from .utils import get_config_value
 
 
 @register(
@@ -104,10 +105,9 @@ class MemeSender(Star):
         self._reload_personas()
 
         # 初始化标签向量
-        if self.config.get("embedding_enabled", False):
-            from .backend.emotion_handler import sync_tag_embeddings
+        from .backend.emotion_handler import sync_tag_embeddings
 
-            asyncio.create_task(sync_tag_embeddings(self))
+        asyncio.create_task(sync_tag_embeddings(self))
 
     @property
     def category_mapping(self) -> dict[str, str]:
@@ -126,76 +126,19 @@ class MemeSender(Star):
             if name not in self.persona_prompts_backup:
                 self.persona_prompts_backup[name] = persona.get("prompt") or ""
 
-        if self.config.get("embedding_enabled", False):
-            for persona in personas:
-                name = persona.get("name") or ""
-                original_prompt = self.persona_prompts_backup.get(name, "")
-                sys_prompt_add = (
-                    "\n\n【表情包发送规则】：你在每次回复中都应该自然地在合适位置加入表情标记来配合你的语气和情绪。"
-                    "表情需用&&包裹，格式如 &&情感词&&（例如 &&开心&& 或 &&miku&&）。"
-                    "\n规则："
-                    "\n1. 在日常对话中，你应该主动且频繁地使用表情标记，每次回复至少使用1个表情标记。"
-                    "\n2. 表情标记应放在回复文本的自然位置（句首、句中或句末均可），用来表达你当前的情绪、动作或反应。"
-                    "\n3. 标记词可以是任何描述情绪、动作、表情或状态的词语（如 &&得意&&、&&害羞&&、&&摸头&&、&&卖萌&& 等），系统会自动通过语义匹配找到最合适的表情包。"
-                    "\n4. 仅在严肃的专业咨询（医疗/法律等）场景下可以不使用表情。"
-                    "\n\n【绝对禁止使用搜索/发图工具】：当用户要求你发送表情包、图片、或提及“发个...表情包/图片”时，**严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。你只需直接在回复文本中输出对应的 &&标签&& 标记，系统会自动在后台拦截此标签并从本地匹配发送表情包。你调用任何搜索或发图工具都是错误且被禁止的！**"
-                )
-                persona["prompt"] = original_prompt + sys_prompt_add
-            return
-
-        from .backend.database import get_db_conn
-
         for persona in personas:
             name = persona.get("name") or ""
             original_prompt = self.persona_prompts_backup.get(name, "")
-            persona_id = persona.get("id") or name or ""
-
-            conn = get_db_conn()
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT emotions FROM memes WHERE personas = '*' OR ',' || personas || ',' LIKE ?",
-                (f"%,{persona_id},%",),
-            )
-            rows = cursor.fetchall()
-            conn.close()
-
-            from .backend.helpers import load_persona_tags
-
-            p_tags = load_persona_tags()
-            dedicated_tag = p_tags.get(persona_id)
-
-            allowed_categories = set()
-            for row in rows:
-                if row["emotions"]:
-                    for emo in row["emotions"].split(","):
-                        emo = emo.strip()
-                        if emo and emo != dedicated_tag:
-                            allowed_categories.add(emo)
-
-            if not allowed_categories:
-                persona["prompt"] = original_prompt
-                continue
-
-            allowed_categories_string = ", ".join(sorted(allowed_categories))
-            sys_prompt_add = (
-                self.prompt_head
-                + allowed_categories_string
-                + self.prompt_tail_1
-                + str(self.max_emotions_per_message)
-                + self.prompt_tail_2
-                + "\n\n【绝对禁止使用搜索/发图工具】：当用户要求你发送表情包、图片、或提及“发个...表情包/图片”时，**严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。你只需直接在回复文本中输出对应的 &&标签&& 标记，系统会自动在后台拦截此标签并从本地匹配发送表情包。你调用任何搜索或发图工具都是错误且被禁止的！**"
-            )
-            persona["prompt"] = original_prompt + sys_prompt_add
+            persona["prompt"] = original_prompt + "\n\n" + self.meme_prompt
 
     async def reload_emotions(self):
         """动态重新加载表情配置"""
         try:
             self.category_manager.sync_with_filesystem()
             self._reload_personas()
-            if self.config.get("embedding_enabled", False):
-                from .backend.emotion_handler import sync_tag_embeddings
+            from .backend.emotion_handler import sync_tag_embeddings
 
-                asyncio.create_task(sync_tag_embeddings(self))
+            asyncio.create_task(sync_tag_embeddings(self))
             try:
                 self._last_mtime = os.path.getmtime(MEMES_DATA_PATH)
             except Exception:
@@ -437,56 +380,61 @@ class MemeSender(Star):
 
     @property
     def fault_tolerant_symbols(self) -> list[str]:
-        return self.config.get("fault_tolerant_symbols", ["⬡"])
+        return get_config_value(self.config, "fault_tolerant_symbols", ["⬡"])
 
     @property
     def auto_steal_enabled(self) -> bool:
-        return self.config.get("auto_steal_enabled", False)
+        return get_config_value(self.config, "auto_steal_enabled", False)
 
     @property
     def auto_steal_probability(self) -> int:
-        return self.config.get("auto_steal_probability", 30)
+        return get_config_value(self.config, "auto_steal_probability", 30)
 
     @property
-    def prompt_head(self) -> str:
-        return self.config.get("prompt", {}).get("prompt_head", "")
-
-    @property
-    def prompt_tail_1(self) -> str:
-        return self.config.get("prompt", {}).get("prompt_tail_1", "")
-
-    @property
-    def prompt_tail_2(self) -> str:
-        return self.config.get("prompt", {}).get("prompt_tail_2", "")
+    def meme_prompt(self) -> str:
+        default_prompt = (
+            "【表情包发送规则】：你在每次回复中都应该自然地在合适位置加入表情标记来配合你的语气 and 情绪。"
+            "表情需用&&包裹，格式如 &&情感词&&（例如 &&开心&& 或 &&miku&&）。"
+            "\n规则："
+            "\n1. 在日常对话中，你应该主动且频繁地使用表情标记，每次回复至少使用1个表情标记。"
+            "\n2. 表情标记应放在回复文本的自然位置（句首、句中或句末均可），用来表达你当前的情绪、动作或反应。"
+            "\n3. 标记词可以是任何描述情绪、动作、表情或状态的词语（如 &&得意&&、&&害羞&&、&&摸头&&、&&卖萌&& 等），系统会自动通过语义匹配找到最合适的表情包。"
+            "\n4. 仅在严肃的专业咨询（医疗/法律等）场景下可以不使用表情。"
+            "\n\n【绝对禁止使用搜索/发图工具】：当用户要求你发送表情包、图片、或提及\u201c发个...表情包/图片\u201d时，"
+            "**严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。"
+            "你只需直接在回复文本中输出对应的 &&标签&& 标记，系统会自动在后台拦截此标签并从本地匹配发送表情包。"
+            "你调用任何搜索或发图工具都是错误且被禁止的！**"
+        )
+        return get_config_value(self.config, "meme_prompt", default_prompt)
 
     @property
     def max_emotions_per_message(self) -> int:
-        return self.config.get("max_emotions_per_message", 2)
+        return get_config_value(self.config, "max_emotions_per_message", 2)
 
     @property
     def emotions_probability(self) -> int:
-        return self.config.get("emotions_probability", 50)
+        return get_config_value(self.config, "emotions_probability", 50)
 
     @property
     def multimodal_llm_enabled(self) -> bool:
-        return self.config.get("multimodal_llm_enabled", False)
+        return get_config_value(self.config, "multimodal_llm_enabled", False)
 
     @property
     def multimodal_llm_provider_id(self) -> str:
-        return self.config.get("multimodal_llm_provider_id", "")
+        return get_config_value(self.config, "multimodal_llm_provider_id", "")
 
     @property
     def enable_mixed_message(self) -> bool:
-        return self.config.get("enable_mixed_message", True)
+        return get_config_value(self.config, "enable_mixed_message", True)
 
     @property
     def mixed_message_probability(self) -> int:
-        return self.config.get("mixed_message_probability", 80)
+        return get_config_value(self.config, "mixed_message_probability", 80)
 
     @property
     def convert_static_to_gif(self) -> bool:
-        return self.config.get("convert_static_to_gif", False)
+        return get_config_value(self.config, "convert_static_to_gif", False)
 
     @property
     def streaming_compatibility(self) -> bool:
-        return self.config.get("streaming_compatibility", False)
+        return get_config_value(self.config, "streaming_compatibility", False)

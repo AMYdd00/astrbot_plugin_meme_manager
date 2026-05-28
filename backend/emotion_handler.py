@@ -11,6 +11,7 @@ from astrbot.core.message.components import Image
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..config import MEMES_DIR
+from ..utils import get_config_value
 from .database import get_db_conn
 from .helpers import (
     convert_to_gif,
@@ -162,7 +163,7 @@ async def sync_tag_embeddings(sender):
             f"[meme_manager] 检测到 {len(missing_tags)} 个表情标签缺失向量，正在后台计算..."
         )
 
-        provider_id = sender.config.get("embedding_provider_id", "")
+        provider_id = get_config_value(sender.config, "embedding_provider_id", "")
         embedding_provider = None
         if provider_id:
             embedding_provider = sender.context.get_provider_by_id(provider_id)
@@ -221,7 +222,7 @@ async def _handle_resp_vector(
         clean_text = clean_text.replace(original, "", 1)
 
     # 2. 替代标记处理 (中括号/括号)
-    if sender.config.get("enable_alternative_markup", True):
+    if get_config_value(sender.config, "enable_alternative_markup", True):
         bracket_pattern = r"\[([^\[\]]+)\]"
         matches = list(re.finditer(bracket_pattern, clean_text))
         for match in matches:
@@ -267,7 +268,7 @@ async def _handle_resp_vector(
         logger.info(f"[meme_manager] 精确匹配到的表情标签: {list(found_exact)}")
 
     # 4. 获取 Embedding Provider
-    provider_id = sender.config.get("embedding_provider_id", "")
+    provider_id = get_config_value(sender.config, "embedding_provider_id", "")
     embedding_provider = None
     if provider_id:
         embedding_provider = sender.context.get_provider_by_id(provider_id)
@@ -304,7 +305,7 @@ async def _handle_resp_vector(
                 logger.warning(f"[meme_manager] 获取标签 '{raw_tag}' 向量失败: {e}")
 
         text_vector = None
-        text_weight = sender.config.get("embedding_text_weight", 0.3)
+        text_weight = get_config_value(sender.config, "embedding_text_weight", 0.3)
         if text_weight > 0 and clean_text.strip():
             try:
                 text_vector = await embedding_provider.get_embedding(clean_text.strip())
@@ -321,10 +322,10 @@ async def _handle_resp_vector(
         )
 
         if (raw_tags_vectors or text_vector) and tag_embeddings:
-            similarity_threshold = sender.config.get(
-                "embedding_similarity_threshold", 0.6
+            similarity_threshold = get_config_value(
+                sender.config, "embedding_similarity_threshold", 0.6
             )
-            tag_weight = sender.config.get("embedding_tag_weight", 0.7)
+            tag_weight = get_config_value(sender.config, "embedding_tag_weight", 0.7)
 
             scores = {}
             all_scores_debug = {}
@@ -402,7 +403,6 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
         logger.debug("[meme_manager] LLM 响应为空，跳过表情识别。")
         return
 
-    text = response.completion_text
     sender.found_emotions = []  # 重置表情列表
     persona_id = await get_persona_id(sender, event)
     conn = get_db_conn()
@@ -431,88 +431,15 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
         if dedicated_tag:
             valid_emoticons.add(dedicated_tag)
 
-    if sender.config.get("embedding_enabled", False):
-        try:
-            await _handle_resp_vector(
-                sender, event, response, valid_emoticons, dedicated_tag
-            )
-            return
-        except Exception as e:
-            logger.error(
-                f"[meme_manager] 向量匹配失败，将降级使用传统规则匹配: {e}",
-                exc_info=True,
-            )
-
-    logger.debug(
-        f"[meme_manager] 收到 LLM 响应，开始表情识别（传统模式）。文本: {text[:100]}..."
-    )
-
-    clean_text = text
-    raw_tags = []
-
-    # 1. 提取 &&...&& 包裹的标记
-    hex_pattern = r"&&([^&&]+)&&"
-    matches = list(re.finditer(hex_pattern, clean_text))
-    for match in matches:
-        original = match.group(0)
-        emotion = match.group(1).strip()
-        if emotion:
-            raw_tags.append((original, emotion))
-
-    # 2. 提取备用标记 [] 和 ()
-    if sender.config.get("enable_alternative_markup", True):
-        bracket_pattern = r"\[([^\[\]]+)\]"
-        matches = list(re.finditer(bracket_pattern, clean_text))
-        for match in matches:
-            original = match.group(0)
-            emotion = match.group(1).strip()
-            if emotion:
-                raw_tags.append((original, emotion))
-
-        paren_pattern = r"\(([^()]+)\)"
-        matches = list(re.finditer(paren_pattern, clean_text))
-        for match in matches:
-            original = match.group(0)
-            emotion = match.group(1).strip()
-            if emotion:
-                if is_likely_emotion_markup(original, clean_text, match.start()):
-                    raw_tags.append((original, emotion))
-
-    # 3. 校验并替换
-    for original, emotion in raw_tags:
-        clean_text = clean_text.replace(original, "", 1)
-        # 精确匹配校验（不区分大小写）
-        matched = None
-        for valid in valid_emoticons:
-            if emotion.lower() == valid.lower():
-                matched = valid
-                break
-        if matched:
-            sender.found_emotions.append(matched)
-
-    # 去重
-    seen = set()
-    filtered_emotions = []
-    for emo in sender.found_emotions:
-        if emo not in seen:
-            seen.add(emo)
-            filtered_emotions.append(emo)
-
-    # 追加专属表情判定
-    if filtered_emotions:
-        import random
-
-        if random.random() < 0.7 and dedicated_tag:
-            dedicated_tag = dedicated_tag.strip()
-            if dedicated_tag and dedicated_tag not in seen:
-                seen.add(dedicated_tag)
-                filtered_emotions.append(dedicated_tag)
-
-    sender.found_emotions = filtered_emotions
-    logger.info(f"[meme_manager] 传统模式最终匹配到的标签列表: {sender.found_emotions}")
-
-    clean_text = re.sub(r"&&+", "", clean_text)
-    response.completion_text = clean_text.strip()
+    try:
+        await _handle_resp_vector(
+            sender, event, response, valid_emoticons, dedicated_tag
+        )
+    except Exception as e:
+        logger.error(
+            f"[meme_manager] 向量匹配失败: {e}",
+            exc_info=True,
+        )
 
 
 async def _send_memes_streaming(sender, event: AstrMessageEvent):
