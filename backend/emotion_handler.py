@@ -244,7 +244,7 @@ async def _handle_resp_vector(
     logger.info(
         f"[meme_manager] _handle_resp_vector: raw_text={text!r}, extracted raw_tags={raw_tags}, clean_text={clean_text!r}"
     )
-    logger.info(
+    logger.debug(
         f"[meme_manager] _handle_resp_vector: valid_emoticons={list(valid_emoticons)}"
     )
 
@@ -277,7 +277,7 @@ async def _handle_resp_vector(
             embedding_provider = provs[0]
 
     if embedding_provider:
-        logger.info(
+        logger.debug(
             f"[meme_manager] 使用 Embedding Provider: {getattr(embedding_provider, 'id', type(embedding_provider).__name__)}"
         )
     else:
@@ -309,14 +309,14 @@ async def _handle_resp_vector(
             try:
                 text_vector = await embedding_provider.get_embedding(clean_text.strip())
                 if text_vector:
-                    logger.info(
+                    logger.debug(
                         f"[meme_manager] 获取回复文本 '{clean_text.strip()}' 向量成功：维度={len(text_vector)}, "
                         f"前5位数据={text_vector[:5]}"
                     )
             except Exception as e:
                 logger.warning(f"[meme_manager] 获取回复文本向量失败: {e}")
 
-        logger.info(
+        logger.debug(
             f"[meme_manager] 提取标签向量 {len(raw_tags_vectors)} 个, 文本向量计算成功={text_vector is not None}, 缓存的标签向量总数={len(tag_embeddings)}"
         )
 
@@ -364,7 +364,7 @@ async def _handle_resp_vector(
                 if combined_score >= similarity_threshold:
                     scores[valid_tag] = combined_score
 
-            logger.info(
+            logger.debug(
                 f"[meme_manager] 所有候选表情标签匹配得分 (阈值={similarity_threshold}): {all_scores_debug}"
             )
 

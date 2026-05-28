@@ -49,8 +49,8 @@ async def on_decorating_result(sender, event: AstrMessageEvent):
                 if cleaned.strip():
                     cleaned_components.append(Plain(cleaned.strip()))
 
-            elif isinstance(original_chain, MessageChain):
-                for component in original_chain.chain:
+            elif isinstance(original_chain, list):
+                for component in original_chain:
                     if isinstance(component, Plain):
                         cleaned = component.text
                         if cleaned.strip():
@@ -134,9 +134,9 @@ async def on_decorating_result(sender, event: AstrMessageEvent):
                 final_cleaned = re.sub(r"&&+", "", original_chain)
                 if final_cleaned.strip():
                     result.chain = [Plain(final_cleaned.strip())]
-            elif isinstance(original_chain, MessageChain):
+            elif isinstance(original_chain, list):
                 final_components = []
-                for component in original_chain.chain:
+                for component in original_chain:
                     if isinstance(component, Plain):
                         final_cleaned = re.sub(r"&&+", "", component.text)
                         if final_cleaned.strip():
