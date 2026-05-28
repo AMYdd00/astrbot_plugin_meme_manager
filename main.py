@@ -126,10 +126,17 @@ class MemeSender(Star):
             if name not in self.persona_prompts_backup:
                 self.persona_prompts_backup[name] = persona.get("prompt") or ""
 
+        format_instruction = (
+            "\n\n【输出格式要求（极其重要）】:\n"
+            "你必须在回复的【最末尾】且【单独一行】输出一个固定格式的表情标记块：<emotions>标签1, 标签2, ...</emotions>（例如 <emotions>得意, 摸头, 猫猫</emotions>，用英文逗号 `,` 分隔）。不要分散在正文多处。若当前回复不需要表情包，则不要输出此标签块。"
+        )
+
         for persona in personas:
             name = persona.get("name") or ""
             original_prompt = self.persona_prompts_backup.get(name, "")
-            persona["prompt"] = original_prompt + "\n\n" + self.meme_prompt
+            persona["prompt"] = (
+                original_prompt + "\n\n" + self.meme_prompt + format_instruction
+            )
 
     async def reload_emotions(self):
         """动态重新加载表情配置"""
@@ -393,17 +400,38 @@ class MemeSender(Star):
     @property
     def meme_prompt(self) -> str:
         default_prompt = (
-            "【表情包发送规则】：你在每次回复中都应该自然地根据当前的语气和情绪选择表情标记。你需要在回复的【最末尾】输出一个固定格式的表情标记块：<emotions>标签1, 标签2</emotions>（例如 <emotions>高兴, 得意</emotions>）。"
+            "【表情包发送行为指引】：你在每次回复中都应该自然地根据当前的聊天内容和情绪选择表情标签。"
             "\n规则："
-            "\n1. 必须在回复的【最末尾】且单独一行使用标签块，不要分散在正文多处。"
-            "\n2. 标签词可以是任何描述情绪、动作、表情或状态的词语（如 得意、害羞、摸头、卖萌 等），系统会自动通过语义匹配找到最合适的表情包。"
-            "\n3. 每次回复最多可填写 2 个标签，用英文逗号 `,` 分隔。若不需要表情包，则不输出此标签块。"
-            "\n\n【绝对禁止使用搜索/发图工具】：当用户要求你发送表情包、图片、或提及\u201c发个...表情包/图片\u201d时，"
-            "**严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。"
-            "你只需直接在回复文本末尾输出对应的 <emotions>标签</emotions> 标记，系统会自动在后台拦截并从本地匹配发送表情包。"
-            "你调用任何搜索或发图工具都是错误且被禁止的！**"
+            "\n1. 标签越丰富、越明确，越能精准匹配到图库中的表情。建议根据当前的聊天内容和情绪提炼并输出多个简短标签（用英文逗号 `,` 分隔），可从以下几个社交维度去发想："
+            "\n   - 意图与功能（如：敷衍、赞同、摸头、贴贴、递茶、抱抱）"
+            "\n   - 情绪与心理（如：得意、害羞、尴尬、开摆、委屈、暴躁、吃惊）"
+            "\n   - 画面主体与行为（如：猫猫、睡觉、吃瓜、熊猫头）"
+            "\n   - 风格与态度（如：阴阳怪气、沙雕、二次元、职场发疯、治愈）"
+            "\n   （若当前回复不需要表情包，则不输出表情标签）"
+            "\n\n【关于搜索与发图工具的限制】："
+            "\n除非用户十分明确要求你使用网络搜索，否则对于普通的聊天回复和表情包发送需求，严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。你只需输出表情标签，系统会自动在后台拦截并从本地匹配发送表情包。"
         )
         return get_config_value(self.config, "meme_prompt", default_prompt)
+
+    @property
+    def multimodal_tag_prompt(self) -> str:
+        default_tag_prompt = (
+            "请对这张表情包图片进行深度的视觉与语义分析，并从以下几个社交使用维度中提炼出最契合该图的 2-5 个中文分类标签：\n\n"
+            "1. 意图与社交功能维度（使用者想用它达到什么社交目的？）：\n"
+            "   - 如：破冰、开场、敷衍、话题终结（呵呵/递茶）、赞同、反对、索求（抱抱/摸头/红包）等行为补偿。\n"
+            "2. 情绪与心理映射维度（传达的原生或复合情绪是什么？）：\n"
+            "   - 如：开心、委屈、得意、尴尬、强颜欢笑、开摆、自嘲、暴躁、发疯、吃惊、无语。\n"
+            "3. 符号与画面主体维度（画面的主角和主要动作是什么？）：\n"
+            "   - 如：猫猫、柴犬、熊猫头、二次元少女、电脑、睡觉、指点、吃瓜。\n"
+            "4. 社交关系、风格与态度维度（表达了怎样的对话语气或关系态度？）：\n"
+            "   - 如：职场发疯、向下示弱、阴阳怪气、沙雕、高糊、二次元、玩梗、土味、治愈。\n\n"
+            "【标签规则】：\n"
+            "- 标签应当使用简短、高频的中文词汇（如：贴贴、无语、猫猫、开摆、敷衍、职场）。\n"
+            "- 请结合图片内容和上述维度，选择最具有代表性的 2-5 个标签，不需要每个维度都覆盖。"
+        )
+        return get_config_value(
+            self.config, "multimodal_tag_prompt", default_tag_prompt
+        )
 
     @property
     def max_emotions_per_message(self) -> int:

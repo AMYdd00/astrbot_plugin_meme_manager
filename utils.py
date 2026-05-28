@@ -361,6 +361,7 @@ def get_config_value(config: dict, key: str, default: Any = None) -> Any:
         # multimodal_config
         "multimodal_llm_enabled": "multimodal_config",
         "multimodal_llm_provider_id": "multimodal_config",
+        "multimodal_tag_prompt": "multimodal_config",
         # compression_config
         "enable_compression": "compression_config",
         "compression_max_size_kb": "compression_config",
