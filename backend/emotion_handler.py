@@ -177,12 +177,20 @@ async def sync_tag_embeddings(sender):
             )
             return
 
+        logger.info(
+            f"[meme_manager] 向量计算开始：使用 Provider ID: {getattr(embedding_provider, 'id', 'unknown')}, "
+            f"类型: {type(embedding_provider).__name__}, Model: {getattr(embedding_provider, 'model', 'unknown')}"
+        )
+
         for tag in missing_tags:
             try:
                 embedding = await embedding_provider.get_embedding(tag)
                 if embedding:
                     save_tag_embedding(tag, embedding)
-                    logger.debug(f"[meme_manager] 标签 '{tag}' 向量计算并保存成功")
+                    logger.info(
+                        f"[meme_manager] 标签 '{tag}' 向量计算成功：维度={len(embedding)}, "
+                        f"前5位数据={embedding[:5]}"
+                    )
             except Exception as e:
                 logger.error(f"[meme_manager] 标签 '{tag}' 向量计算失败: {e}")
 
@@ -288,6 +296,10 @@ async def _handle_resp_vector(
                 vec = await embedding_provider.get_embedding(raw_tag)
                 if vec:
                     raw_tags_vectors.append(vec)
+                    logger.info(
+                        f"[meme_manager] 获取标签 '{raw_tag}' 向量成功：维度={len(vec)}, "
+                        f"前5位数据={vec[:5]}"
+                    )
             except Exception as e:
                 logger.warning(f"[meme_manager] 获取标签 '{raw_tag}' 向量失败: {e}")
 
@@ -296,6 +308,11 @@ async def _handle_resp_vector(
         if text_weight > 0 and clean_text.strip():
             try:
                 text_vector = await embedding_provider.get_embedding(clean_text.strip())
+                if text_vector:
+                    logger.info(
+                        f"[meme_manager] 获取回复文本 '{clean_text.strip()}' 向量成功：维度={len(text_vector)}, "
+                        f"前5位数据={text_vector[:5]}"
+                    )
             except Exception as e:
                 logger.warning(f"[meme_manager] 获取回复文本向量失败: {e}")
 
