@@ -136,12 +136,6 @@ class MemeSender(Star):
                 persona["prompt"] = original_prompt + sys_prompt_add
             return
 
-        if self.emotion_llm_enabled:
-            for persona in personas:
-                name = persona.get("name") or ""
-                persona["prompt"] = self.persona_prompts_backup.get(name, "")
-            return
-
         from .backend.database import get_db_conn
 
         for persona in personas:
@@ -458,18 +452,6 @@ class MemeSender(Star):
         return self.config.get("emotions_probability", 50)
 
     @property
-    def strict_max_emotions_per_message(self) -> bool:
-        return self.config.get("strict_max_emotions_per_message", True)
-
-    @property
-    def emotion_llm_enabled(self) -> bool:
-        return self.config.get("emotion_llm_enabled", False)
-
-    @property
-    def emotion_llm_provider_id(self) -> str:
-        return self.config.get("emotion_llm_provider_id", "")
-
-    @property
     def multimodal_llm_enabled(self) -> bool:
         return self.config.get("multimodal_llm_enabled", False)
 
@@ -486,17 +468,9 @@ class MemeSender(Star):
         return self.config.get("mixed_message_probability", 80)
 
     @property
-    def remove_invalid_alternative_markup(self) -> bool:
-        return self.config.get("remove_invalid_alternative_markup", False)
-
-    @property
     def convert_static_to_gif(self) -> bool:
         return self.config.get("convert_static_to_gif", False)
 
     @property
     def streaming_compatibility(self) -> bool:
         return self.config.get("streaming_compatibility", False)
-
-    @property
-    def content_cleanup_rule(self) -> str:
-        return self.config.get("content_cleanup_rule", "&&[a-zA-Z]*&&")

@@ -370,197 +370,51 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
             logger.error(f"[meme_manager] 向量匹配失败，将降级使用传统规则匹配: {e}", exc_info=True)
 
     logger.debug(
-        f"[meme_manager] 收到 LLM 响应，开始表情识别。文本: {text[:100]}...，启用情感模型: {sender.emotion_llm_enabled}"
+        f"[meme_manager] 收到 LLM 响应，开始表情识别（传统模式）。文本: {text[:100]}..."
     )
 
     clean_text = text
+    raw_tags = []
 
-    # 第一阶段：严格匹配符号包裹的表情
+    # 1. 提取 &&...&& 包裹的标记
     hex_pattern = r"&&([^&&]+)&&"
-    matches = re.finditer(hex_pattern, clean_text)
-
-    temp_replacements = []
-    strict_emotions = []
+    matches = list(re.finditer(hex_pattern, clean_text))
     for match in matches:
         original = match.group(0)
         emotion = match.group(1).strip()
-
-        if emotion in valid_emoticons:
-            temp_replacements.append((original, emotion))
-            strict_emotions.append(emotion)
-        else:
-            temp_replacements.append((original, ""))  # 非法表情静默移除
-
-    for original, emotion in temp_replacements:
-        clean_text = clean_text.replace(original, "", 1)
         if emotion:
-            sender.found_emotions.append(emotion)
+            raw_tags.append((original, emotion))
 
-    logger.debug(
-        f"[meme_manager] 第一阶段严格匹配符号 && 包裹的表情: {strict_emotions}"
-    )
-
-    # 第二阶段：替代标记处理
+    # 2. 提取备用标记 [] 和 ()
     if sender.config.get("enable_alternative_markup", True):
-        remove_invalid_markup = sender.remove_invalid_alternative_markup
         bracket_pattern = r"\[([^\[\]]+)\]"
-        matches = re.finditer(bracket_pattern, clean_text)
-        bracket_replacements = []
-        invalid_brackets = [] if remove_invalid_markup else None
-
+        matches = list(re.finditer(bracket_pattern, clean_text))
         for match in matches:
             original = match.group(0)
             emotion = match.group(1).strip()
-
-            if emotion in valid_emoticons:
-                bracket_replacements.append((original, emotion))
-            elif remove_invalid_markup:
-                invalid_brackets.append(original)
-
-        if remove_invalid_markup:
-            for invalid in invalid_brackets:
-                clean_text = clean_text.replace(invalid, "", 1)
-
-        for original, emotion in bracket_replacements:
-            clean_text = clean_text.replace(original, "", 1)
-            sender.found_emotions.append(emotion)
+            if emotion:
+                raw_tags.append((original, emotion))
 
         paren_pattern = r"\(([^()]+)\)"
-        matches = re.finditer(paren_pattern, clean_text)
-        paren_replacements = []
-        invalid_parens = [] if remove_invalid_markup else None
-
+        matches = list(re.finditer(paren_pattern, clean_text))
         for match in matches:
             original = match.group(0)
             emotion = match.group(1).strip()
-
-            if emotion in valid_emoticons:
+            if emotion:
                 if is_likely_emotion_markup(original, clean_text, match.start()):
-                    paren_replacements.append((original, emotion))
-            elif remove_invalid_markup:
-                invalid_parens.append(original)
+                    raw_tags.append((original, emotion))
 
-        if remove_invalid_markup:
-            for invalid in invalid_parens:
-                clean_text = clean_text.replace(invalid, "", 1)
-
-        for original, emotion in paren_replacements:
-            clean_text = clean_text.replace(original, "", 1)
-            sender.found_emotions.append(emotion)
-
-        logger.debug(
-            f"[meme_manager] 第二阶段替代标记 [] / () 包裹的表情: {[b[1] for b in bracket_replacements] + [p[1] for p in paren_replacements]}"
-        )
-
-    # 第三阶段：处理重复表情模式
-    repeated_emotions = []
-    if sender.config.get("enable_repeated_emotion_detection", True):
-        high_confidence_emotions = sender.config.get("high_confidence_emotions", [])
-
-        for emotion in valid_emoticons:
-            if len(emotion) < 3:
-                continue
-
-            if emotion in high_confidence_emotions:
-                repeat_pattern = f"({re.escape(emotion)})\\1{{1,}}"
-                matches = re.finditer(repeat_pattern, clean_text)
-                for match in matches:
-                    if is_position_in_thinking_tags(clean_text, match.start()):
-                        continue
-                    original = match.group(0)
-                    clean_text = clean_text.replace(original, "", 1)
-                    sender.found_emotions.append(emotion)
-                    repeated_emotions.append(emotion)
-            else:
-                if len(emotion) >= 4:
-                    repeat_pattern = f"({re.escape(emotion)})\\1{{2,}}"
-                    matches = re.finditer(repeat_pattern, clean_text)
-                    for match in matches:
-                        if is_position_in_thinking_tags(clean_text, match.start()):
-                            continue
-                        original = match.group(0)
-                        clean_text = clean_text.replace(original, "", 1)
-                        sender.found_emotions.append(emotion)
-                        repeated_emotions.append(emotion)
-
-    logger.debug(f"[meme_manager] 第三阶段重复检测阶段找到的表情: {repeated_emotions}")
-
-    # 第四阶段：智能识别可能的表情（松散模式）
-    loose_emotions = []
-    if sender.config.get("enable_loose_emotion_matching", True):
-        for emotion in valid_emoticons:
-            pattern = r"\b(" + re.escape(emotion) + r")\b"
-            for match in re.finditer(pattern, clean_text):
-                word = match.group(1)
-                position = match.start()
-
-                if is_position_in_thinking_tags(clean_text, position):
-                    continue
-
-                if is_likely_emotion(
-                    word, clean_text, position, valid_emoticons, sender
-                ):
-                    sender.found_emotions.append(word)
-                    loose_emotions.append(word)
-                    clean_text = (
-                        clean_text[:position] + clean_text[position + len(word) :]
-                    )
-
-    logger.debug(f"[meme_manager] 第四阶段松散匹配阶段找到的表情: {loose_emotions}")
-
-    if sender.emotion_llm_enabled:
-        try:
-            provider_id = sender.emotion_llm_provider_id
-            if not provider_id:
-                provider_id = await sender.context.get_current_chat_provider_id(
-                    umo=event.unified_msg_origin
-                )
-            if provider_id:
-                valid_list = sorted(valid_emoticons)
-                prompt = (
-                    "你是表情标签选择器，只能从给定标签中选择。\n"
-                    "请基于文本语义判断需要的表情，并将最契合、最相关的标签排在最前面，返回JSON格式：\n"
-                    '{"emotions":["tag1","tag2"]}\n'
-                    "只输出JSON，不要解释。\n"
-                    f"可用标签: {', '.join(valid_list)}\n"
-                    f"文本: {clean_text}"
-                )
-                logger.debug(f"[meme_manager] 情感模型准备调用。模型 ID: {provider_id}")
-                llm_resp = await sender.context.llm_generate(
-                    chat_provider_id=provider_id, prompt=prompt
-                )
-                if llm_resp and llm_resp.completion_text:
-                    raw_text = llm_resp.completion_text.strip()
-                    logger.debug(f"[meme_manager] 情感模型返回原始文本: {raw_text}")
-                    data = None
-                    try:
-                        data = json.loads(raw_text)
-                    except Exception:
-                        match = re.search(r"\{[\s\S]*\}", raw_text)
-                        if match:
-                            try:
-                                data = json.loads(match.group(0))
-                            except Exception:
-                                data = None
-                    if isinstance(data, dict):
-                        emotions = data.get("emotions")
-                        logger.debug(
-                            f"[meme_manager] 情感模型解析得到的表情: {emotions}"
-                        )
-                        if isinstance(emotions, list):
-                            for emo in emotions:
-                                if isinstance(emo, str) and emo in valid_emoticons:
-                                    sender.found_emotions.append(emo)
-                        elif isinstance(emotions, str) and emotions in valid_emoticons:
-                            sender.found_emotions.append(emotions)
-                    else:
-                        logger.warning(
-                            "[meme_manager] 情感模型返回的格式无法解析为 JSON 字典。"
-                        )
-                else:
-                    logger.warning("[meme_manager] 情感模型返回内容为空。")
-        except Exception as e:
-            logger.error(f"[meme_manager] 情感模型调用失败: {e}")
+    # 3. 校验并替换
+    for original, emotion in raw_tags:
+        clean_text = clean_text.replace(original, "", 1)
+        # 精确匹配校验（不区分大小写）
+        matched = None
+        for valid in valid_emoticons:
+            if emotion.lower() == valid.lower():
+                matched = valid
+                break
+        if matched:
+            sender.found_emotions.append(matched)
 
     # 去重
     seen = set()
@@ -570,23 +424,17 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
             seen.add(emo)
             filtered_emotions.append(emo)
 
-    # 仅在至少检测出一个情绪标签时，以约 70% 的概率追加人格专属标签，保持 30% 概率使用通用表情以保障多样性
+    # 追加专属表情判定
     if filtered_emotions:
         import random
-        if random.random() < 0.7:
-            persona_id = await get_persona_id(sender, event)
-            from .helpers import load_persona_tags
-
-            p_tags = load_persona_tags()
-            dedicated_tag = p_tags.get(persona_id)
-            if dedicated_tag:
-                dedicated_tag = dedicated_tag.strip()
-                if dedicated_tag and dedicated_tag not in seen:
-                    seen.add(dedicated_tag)
-                    filtered_emotions.append(dedicated_tag)
+        if random.random() < 0.7 and dedicated_tag:
+            dedicated_tag = dedicated_tag.strip()
+            if dedicated_tag and dedicated_tag not in seen:
+                seen.add(dedicated_tag)
+                filtered_emotions.append(dedicated_tag)
 
     sender.found_emotions = filtered_emotions
-    logger.info(f"[meme_manager] 去重后的最终表情标签列表: {sender.found_emotions}")
+    logger.info(f"[meme_manager] 传统模式最终匹配到的标签列表: {sender.found_emotions}")
 
     clean_text = re.sub(r"&&+", "", clean_text)
     response.completion_text = clean_text.strip()
