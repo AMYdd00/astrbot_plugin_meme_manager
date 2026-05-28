@@ -236,7 +236,7 @@
     "type": "string",
     "default": "",
     "hint": "请选择当前已启用的 Embedding 提供商。留空则默认使用系统第一个可用的 Embedding 节点。",
-    "_special": "select_provider"
+    "_special": "select_embedding_provider"
   },
   "embedding_similarity_threshold": {
     "description": "向量相似度最低阈值 (0-1)",
