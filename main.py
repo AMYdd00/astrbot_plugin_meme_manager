@@ -106,6 +106,7 @@ class MemeSender(Star):
         # 初始化标签向量
         if self.config.get("embedding_enabled", False):
             from .backend.emotion_handler import sync_tag_embeddings
+
             asyncio.create_task(sync_tag_embeddings(self))
 
     @property
@@ -130,9 +131,9 @@ class MemeSender(Star):
                 name = persona.get("name") or ""
                 original_prompt = self.persona_prompts_backup.get(name, "")
                 sys_prompt_add = (
-                    "\n\n你在对话中如果想发出某种表情包或配合某种动作，请在合适的位置自由输出描述它的标签词，表情需用&&包裹，格式如 &&情感词&&（例如 &&高兴&& 或 &&猫&&）。"
+                    "\n\n【表情包发送规则】：你在对话中如果想发出某种表情包或配合某种动作，请在合适的位置自由输出描述它的标签词，表情需用&&包裹，格式如 &&情感词&&（例如 &&高兴&& 或 &&miku&&）。"
                     "请尽量贴合对话内容进行自由表达。"
-                    "\n\n【重要约束】：当用户要求你发送表情包、图片或特定表情时，严禁使用任何搜索工具去网络查找图片，也严禁调用工具直接发图。你只需直接在回复文本中输出对应的 &&标签&&，系统会自动在后台匹配并发送。"
+                    "\n\n【绝对禁止使用搜索/发图工具】：当用户要求你发送表情包、图片、或提及“发个...表情包/图片”时，**严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。你只需直接在回复文本中输出对应的 &&标签&& 标记，系统会自动在后台拦截此标签并从本地匹配发送表情包。你调用任何搜索或发图工具都是错误且被禁止的！**"
                 )
                 persona["prompt"] = original_prompt + sys_prompt_add
             return
@@ -177,7 +178,7 @@ class MemeSender(Star):
                 + self.prompt_tail_1
                 + str(self.max_emotions_per_message)
                 + self.prompt_tail_2
-                + "\n\n【重要约束】：当用户要求你发送表情包、图片或特定表情时，严禁使用任何搜索工具去网络查找图片，也严禁调用工具直接发图。你只需直接在回复文本中输出对应的 &&标签&&，系统会自动在后台匹配并发送。"
+                + "\n\n【绝对禁止使用搜索/发图工具】：当用户要求你发送表情包、图片、或提及“发个...表情包/图片”时，**严禁使用任何外部搜索工具（如 web_search、tavily 等）去网络搜索图片，也严禁调用任何第三方发图或消息发送工具。你只需直接在回复文本中输出对应的 &&标签&& 标记，系统会自动在后台拦截此标签并从本地匹配发送表情包。你调用任何搜索或发图工具都是错误且被禁止的！**"
             )
             persona["prompt"] = original_prompt + sys_prompt_add
 
@@ -188,6 +189,7 @@ class MemeSender(Star):
             self._reload_personas()
             if self.config.get("embedding_enabled", False):
                 from .backend.emotion_handler import sync_tag_embeddings
+
                 asyncio.create_task(sync_tag_embeddings(self))
             try:
                 self._last_mtime = os.path.getmtime(MEMES_DATA_PATH)

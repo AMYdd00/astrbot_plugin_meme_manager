@@ -1,4 +1,4 @@
-import json
+import math
 import os
 import random
 import re
@@ -15,9 +15,7 @@ from .database import get_db_conn
 from .helpers import (
     convert_to_gif,
     get_persona_id,
-    is_likely_emotion,
     is_likely_emotion_markup,
-    is_position_in_thinking_tags,
 )
 
 
@@ -57,12 +55,17 @@ async def _select_memes_by_emotions_priority(
 
     # 获取人格专属标签，用于评分加分（而不是计入 matched_count）
     from .helpers import load_persona_tags
+
     p_tags = load_persona_tags()
     dedicated_tag = p_tags.get(persona_id)
     if dedicated_tag:
         dedicated_tag = dedicated_tag.strip()
 
-    emotions_to_match = [e for e in found_emotions if e != dedicated_tag] if dedicated_tag else found_emotions
+    emotions_to_match = (
+        [e for e in found_emotions if e != dedicated_tag]
+        if dedicated_tag
+        else found_emotions
+    )
 
     # 评分并筛选出本地确实存在的文件
     valid_memes = []
@@ -118,8 +121,6 @@ async def _select_memes_by_emotions_priority(
     return selected_memes
 
 
-import math
-
 def cosine_similarity(v1, v2):
     dot_product = sum(x * y for x, y in zip(v1, v2))
     norm_v1 = math.sqrt(sum(x * x for x in v1))
@@ -132,14 +133,14 @@ def cosine_similarity(v1, v2):
 async def sync_tag_embeddings(sender):
     """后台增量计算缺失标签的向量并同步至 SQLite"""
     try:
-        from .database import get_db_conn, get_all_tag_embeddings, save_tag_embedding
-        
+        from .database import get_all_tag_embeddings, get_db_conn, save_tag_embedding
+
         conn = get_db_conn()
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT emotions FROM memes")
         rows = cursor.fetchall()
         conn.close()
-        
+
         all_tags = set()
         for row in rows:
             if row["emotions"]:
@@ -147,18 +148,20 @@ async def sync_tag_embeddings(sender):
                     emo = emo.strip()
                     if emo:
                         all_tags.add(emo)
-                        
+
         if not all_tags:
             return
-            
+
         cached_embeddings = get_all_tag_embeddings()
         missing_tags = [tag for tag in all_tags if tag not in cached_embeddings]
-        
+
         if not missing_tags:
             return
-            
-        logger.info(f"[meme_manager] 检测到 {len(missing_tags)} 个表情标签缺失向量，正在后台计算...")
-        
+
+        logger.info(
+            f"[meme_manager] 检测到 {len(missing_tags)} 个表情标签缺失向量，正在后台计算..."
+        )
+
         provider_id = sender.config.get("embedding_provider_id", "")
         embedding_provider = None
         if provider_id:
@@ -167,11 +170,13 @@ async def sync_tag_embeddings(sender):
             provs = sender.context.get_all_embedding_providers()
             if provs:
                 embedding_provider = provs[0]
-                
+
         if not embedding_provider:
-            logger.warning("[meme_manager] 未配置或未找到可用的 Embedding 提供商，跳过向量同步。")
+            logger.warning(
+                "[meme_manager] 未配置或未找到可用的 Embedding 提供商，跳过向量同步。"
+            )
             return
-            
+
         for tag in missing_tags:
             try:
                 embedding = await embedding_provider.get_embedding(tag)
@@ -180,13 +185,19 @@ async def sync_tag_embeddings(sender):
                     logger.debug(f"[meme_manager] 标签 '{tag}' 向量计算并保存成功")
             except Exception as e:
                 logger.error(f"[meme_manager] 标签 '{tag}' 向量计算失败: {e}")
-                
+
         logger.info("[meme_manager] 标签向量增量同步完成")
     except Exception as e:
         logger.error(f"[meme_manager] 标签向量同步过程发生错误: {e}")
 
 
-async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResponse, valid_emoticons: set[str], dedicated_tag: str | None):
+async def _handle_resp_vector(
+    sender,
+    event: AstrMessageEvent,
+    response: LLMResponse,
+    valid_emoticons: set[str],
+    dedicated_tag: str | None,
+):
     text = response.completion_text
     clean_text = text
     raw_tags = []
@@ -225,7 +236,7 @@ async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResp
     # 3. 精确匹配校验与筛选
     found_exact = set()
     tags_to_embed = []
-    
+
     for raw_tag in raw_tags:
         matched = None
         for valid in valid_emoticons:
@@ -251,6 +262,7 @@ async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResp
     found_vector = set()
     if embedding_provider:
         from .database import get_all_tag_embeddings
+
         tag_embeddings = get_all_tag_embeddings()
 
         raw_tags_vectors = []
@@ -271,7 +283,9 @@ async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResp
                 logger.warning(f"[meme_manager] 获取回复文本向量失败: {e}")
 
         if (raw_tags_vectors or text_vector) and tag_embeddings:
-            similarity_threshold = sender.config.get("embedding_similarity_threshold", 0.6)
+            similarity_threshold = sender.config.get(
+                "embedding_similarity_threshold", 0.6
+            )
             tag_weight = sender.config.get("embedding_tag_weight", 0.7)
 
             scores = {}
@@ -285,7 +299,9 @@ async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResp
 
                 sim_tag = 0.0
                 if raw_tags_vectors:
-                    sim_tag = max(cosine_similarity(v, tag_vec) for v in raw_tags_vectors)
+                    sim_tag = max(
+                        cosine_similarity(v, tag_vec) for v in raw_tags_vectors
+                    )
 
                 sim_text = 0.0
                 if text_vector:
@@ -296,7 +312,9 @@ async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResp
                 total_weight = w_tag + w_text
 
                 if total_weight > 0:
-                    combined_score = (sim_tag * w_tag + sim_text * w_text) / total_weight
+                    combined_score = (
+                        sim_tag * w_tag + sim_text * w_text
+                    ) / total_weight
                 else:
                     combined_score = 0.0
 
@@ -310,13 +328,16 @@ async def _handle_resp_vector(sender, event: AstrMessageEvent, response: LLMResp
                 for t, score in sorted_tags[:max_limit]:
                     found_vector.add(t)
     else:
-        logger.warning("[meme_manager] 未配置或未找到可用的 Embedding 模型，无法进行向量召回。")
+        logger.warning(
+            "[meme_manager] 未配置或未找到可用的 Embedding 模型，无法进行向量召回。"
+        )
 
     sender.found_emotions = list(found_exact.union(found_vector))
 
     # 追加专属表情判定（跟原逻辑保持一致）
     if sender.found_emotions:
         import random
+
         if random.random() < 0.7 and dedicated_tag:
             dedicated_tag = dedicated_tag.strip()
             if dedicated_tag and dedicated_tag not in sender.found_emotions:
@@ -355,6 +376,7 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
                     valid_emoticons.add(emo)
 
     from .helpers import load_persona_tags
+
     p_tags = load_persona_tags()
     dedicated_tag = p_tags.get(persona_id)
     if dedicated_tag:
@@ -364,10 +386,15 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
 
     if sender.config.get("embedding_enabled", False):
         try:
-            await _handle_resp_vector(sender, event, response, valid_emoticons, dedicated_tag)
+            await _handle_resp_vector(
+                sender, event, response, valid_emoticons, dedicated_tag
+            )
             return
         except Exception as e:
-            logger.error(f"[meme_manager] 向量匹配失败，将降级使用传统规则匹配: {e}", exc_info=True)
+            logger.error(
+                f"[meme_manager] 向量匹配失败，将降级使用传统规则匹配: {e}",
+                exc_info=True,
+            )
 
     logger.debug(
         f"[meme_manager] 收到 LLM 响应，开始表情识别（传统模式）。文本: {text[:100]}..."
@@ -427,6 +454,7 @@ async def handle_resp(sender, event: AstrMessageEvent, response: LLMResponse):
     # 追加专属表情判定
     if filtered_emotions:
         import random
+
         if random.random() < 0.7 and dedicated_tag:
             dedicated_tag = dedicated_tag.strip()
             if dedicated_tag and dedicated_tag not in seen:

@@ -211,7 +211,11 @@ async def steal_meme(
             f"[meme_manager] 发现缓存记录：image_hash={raw_hash}, persona_id={persona_id}, is_matched={is_matched}"
         )
         if not is_matched:
-            reason = attempt["reason"] if "reason" in attempt.keys() and attempt["reason"] else ""
+            reason = (
+                attempt["reason"]
+                if "reason" in attempt.keys() and attempt["reason"]
+                else ""
+            )
             if reason:
                 return f"该图片不符合当前人格的表情包收集偏好，拒绝收录。原因: {reason}"
             else:
@@ -322,7 +326,7 @@ async def steal_meme(
                     if isinstance(data, list):
                         parsed_categories = [str(x) for x in data]
                     else:
-                        for cat in existing_tags:
+                        for cat in valid_categories:
                             if cat in raw_text:
                                 parsed_categories.append(cat)
 
@@ -565,7 +569,9 @@ async def auto_steal_meme(sender, event: AstrMessageEvent):
         return
 
     # 5. 调用原本的 steal_meme 工具流程进行盗取
-    logger.info(f"[meme_manager] 自动偷表情：开始对图片 {raw_hash} 进行暗中收录判定 (已看见 {seen_count} 次)...")
+    logger.info(
+        f"[meme_manager] 自动偷表情：开始对图片 {raw_hash} 进行暗中收录判定 (已看见 {seen_count} 次)..."
+    )
     try:
         result = await steal_meme(
             sender=sender,

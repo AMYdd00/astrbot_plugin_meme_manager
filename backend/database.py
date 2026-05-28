@@ -246,7 +246,9 @@ def get_steal_attempt(image_hash: str, persona_id: str) -> sqlite3.Row | None:
     return row
 
 
-def save_steal_attempt(image_hash: str, persona_id: str, is_matched: bool, reason: str = "") -> None:
+def save_steal_attempt(
+    image_hash: str, persona_id: str, is_matched: bool, reason: str = ""
+) -> None:
     """保存盗图尝试记录"""
     import time
 
@@ -304,6 +306,7 @@ def increment_image_seen_count(image_hash: str) -> int:
 def get_all_tag_embeddings() -> dict[str, list[float]]:
     """获取所有已缓存的标签向量"""
     import json
+
     conn = get_db_conn()
     cursor = conn.cursor()
     try:
@@ -325,6 +328,7 @@ def get_all_tag_embeddings() -> dict[str, list[float]]:
 def save_tag_embedding(tag: str, embedding: list[float]) -> None:
     """保存或更新标签向量"""
     import json
+
     conn = get_db_conn()
     cursor = conn.cursor()
     cursor.execute(
@@ -342,4 +346,3 @@ def delete_tag_embedding(tag: str) -> None:
     cursor.execute("DELETE FROM tag_embeddings WHERE tag = ?", (tag,))
     conn.commit()
     conn.close()
-
