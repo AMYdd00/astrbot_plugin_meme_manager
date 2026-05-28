@@ -233,6 +233,13 @@ async def _handle_resp_vector(
                     raw_tags.append(emotion)
                     clean_text = clean_text.replace(original, "", 1)
 
+    logger.info(
+        f"[meme_manager] _handle_resp_vector: raw_text={text!r}, extracted raw_tags={raw_tags}, clean_text={clean_text!r}"
+    )
+    logger.info(
+        f"[meme_manager] _handle_resp_vector: valid_emoticons={list(valid_emoticons)}"
+    )
+
     # 3. 精确匹配校验与筛选
     found_exact = set()
     tags_to_embed = []
@@ -248,6 +255,9 @@ async def _handle_resp_vector(
         else:
             tags_to_embed.append(raw_tag)
 
+    if found_exact:
+        logger.info(f"[meme_manager] 精确匹配到的表情标签: {list(found_exact)}")
+
     # 4. 获取 Embedding Provider
     provider_id = sender.config.get("embedding_provider_id", "")
     embedding_provider = None
@@ -257,6 +267,13 @@ async def _handle_resp_vector(
         provs = sender.context.get_all_embedding_providers()
         if provs:
             embedding_provider = provs[0]
+
+    if embedding_provider:
+        logger.info(
+            f"[meme_manager] 使用 Embedding Provider: {getattr(embedding_provider, 'id', type(embedding_provider).__name__)}"
+        )
+    else:
+        logger.info("[meme_manager] 没有可用的 Embedding Provider 节点")
 
     # 5. 计算相似度匹配
     found_vector = set()
@@ -282,6 +299,10 @@ async def _handle_resp_vector(
             except Exception as e:
                 logger.warning(f"[meme_manager] 获取回复文本向量失败: {e}")
 
+        logger.info(
+            f"[meme_manager] 提取标签向量 {len(raw_tags_vectors)} 个, 文本向量计算成功={text_vector is not None}, 缓存的标签向量总数={len(tag_embeddings)}"
+        )
+
         if (raw_tags_vectors or text_vector) and tag_embeddings:
             similarity_threshold = sender.config.get(
                 "embedding_similarity_threshold", 0.6
@@ -289,12 +310,14 @@ async def _handle_resp_vector(
             tag_weight = sender.config.get("embedding_tag_weight", 0.7)
 
             scores = {}
+            all_scores_debug = {}
             for valid_tag in valid_emoticons:
                 if valid_tag in found_exact:
                     continue
 
                 tag_vec = tag_embeddings.get(valid_tag)
                 if not tag_vec:
+                    all_scores_debug[valid_tag] = "no_vec"
                     continue
 
                 sim_tag = 0.0
@@ -318,8 +341,15 @@ async def _handle_resp_vector(
                 else:
                     combined_score = 0.0
 
+                all_scores_debug[valid_tag] = (
+                    f"sim_tag={sim_tag:.4f}, sim_text={sim_text:.4f}, combined={combined_score:.4f}"
+                )
                 if combined_score >= similarity_threshold:
                     scores[valid_tag] = combined_score
+
+            logger.info(
+                f"[meme_manager] 所有候选表情标签匹配得分 (阈值={similarity_threshold}): {all_scores_debug}"
+            )
 
             if scores:
                 sorted_tags = sorted(scores.items(), key=lambda x: x[1], reverse=True)
